@@ -65,11 +65,12 @@ docker run -d \
   -p 8724:8724 \
   -v xcomic-data:/app/data \
   -v xcomic-downloads:/download \
-  -e SECRET_KEY=your-secret-key \
   -e DOWNLOAD_DIR=/download \
   --restart unless-stopped \
   anxina/xcomic-hub
 ```
+
+> 💡 **提示**：如需自定义 Flask 密钥，可添加 `-e SECRET_KEY=your-secret-key`
 
 访问 `http://localhost:8724`
 
@@ -86,14 +87,16 @@ services:
       - xcomic-data:/app/data
       - xcomic-downloads:/download
     environment:
-      - SECRET_KEY=change-this-to-a-random-secret
       - DOWNLOAD_DIR=/download
+      # - SECRET_KEY=your-secret-key  # 可选，如需自定义 Flask 密钥
     restart: unless-stopped
 
 volumes:
   xcomic-data:
   xcomic-downloads:
 ```
+
+> 💡 **提示**：生产环境建议通过 `SECRET_KEY` 环境变量设置随机密钥防止会话伪造，可用 `python -c "import secrets; print(secrets.token_hex(32))"` 生成
 
 ## 目录结构
 
