@@ -5,6 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Docker](https://img.shields.io/badge/Docker-anxina%2Fxcomic--hub-blue.svg)
 
 ## 功能特性
 
@@ -58,14 +59,41 @@ python run.py
 ### 方式二：Docker 部署
 
 ```bash
-# 构建并启动
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
+# 拉取镜像并启动
+docker run -d \
+  --name xcomic-hub \
+  -p 8724:8724 \
+  -v xcomic-data:/app/data \
+  -v xcomic-downloads:/download \
+  -e SECRET_KEY=your-secret-key \
+  -e DOWNLOAD_DIR=/download \
+  --restart unless-stopped \
+  anxina/xcomic-hub
 ```
 
 访问 `http://localhost:8724`
+
+### 方式三：Docker Compose
+
+```yaml
+services:
+  xcomic:
+    image: anxina/xcomic-hub
+    container_name: xcomic-hub
+    ports:
+      - "8724:8724"
+    volumes:
+      - xcomic-data:/app/data
+      - xcomic-downloads:/download
+    environment:
+      - SECRET_KEY=change-this-to-a-random-secret
+      - DOWNLOAD_DIR=/download
+    restart: unless-stopped
+
+volumes:
+  xcomic-data:
+  xcomic-downloads:
+```
 
 ## 目录结构
 
@@ -81,7 +109,7 @@ xcomic-hub/
 │   ├── models.py       # 数据模型
 │   ├── reader.py       # 阅读器核心
 │   └── routes.py       # 页面路由
-├── data/               # 数据存储目录
+├── data/               # 本地数据存储目录
 │   ├── comics/         # 漫画文件
 │   ├── covers/         # 封面图片
 │   ├── nfo/            # NFO 元数据
@@ -93,16 +121,24 @@ xcomic-hub/
 └── docker-compose.yml  # Docker Compose 配置
 ```
 
+## Docker 存储说明
+
+| 容器路径 | 说明 | 宿主机建议挂载 |
+|----------|------|----------------|
+| `/app/data` | 数据库、封面、NFO 等数据 | `xcomic-data:/app/data` |
+| `/download` | 下载任务目录（种子/磁力下载） | `xcomic-downloads:/download` |
+
 ## 配置说明
 
 ### 环境变量
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `SECRET_KEY` | manhua-dev-secret-key | Flask 密钥 |
-| `DATA_DIR` | ./data | 数据存储目录 |
-| `COMICS_DIR` | ./data/comics | 漫画文件目录 |
-| `DB_PATH` | ./data/manhua.db | 数据库路径 |
+| `SECRET_KEY` | manhua-dev-secret-key | Flask 密钥（生产环境请修改） |
+| `DOWNLOAD_DIR` | /download | 下载任务目录 |
+| `DATA_DIR` | /app/data | 数据存储目录 |
+| `COMICS_DIR` | /app/data/comics | 漫画文件目录 |
+| `DB_PATH` | /app/data/manhua.db | 数据库路径 |
 | `FLASK_ENV` | production | 运行环境 |
 
 ### 代理设置
@@ -192,7 +228,7 @@ Authorization: Bearer <access_token>
 ### Q: 如何上传漫画？
 
 1. **网页上传** - 点击「上传漫画」按钮，选择文件上传
-2. **文件夹导入** - 将漫画文件放入 `data/comics` 目录
+2. **文件夹导入** - 将漫画文件放入 Docker 容器内的 `/app/data/comics` 目录
 3. **API 上传** - 使用分片上传接口，支持大文件
 
 ### Q: 如何采集漫画信息？
