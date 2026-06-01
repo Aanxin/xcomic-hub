@@ -2,25 +2,18 @@ version: '3.8'
 
 services:
   manhua:
-    build: .
-    container_name: manhua-app
+    image: anxina/xcomic-hub
+    container_name: xcomic-hub
     ports:
       - "8724:8724"
     volumes:
-      - manhua-data:/app/data
-      - ./comics:/comics
-      - ./nfo:/nfo
+      - ./data:/app/data
       - ./download:/download
     environment:
       - FLASK_ENV=production
       - SECRET_KEY=change-this-to-a-random-secret
-      - COMICS_DIR=/comics
-      - NFO_DIR=/nfo
       - DOWNLOAD_DIR=/download
       - GEVENT_RESOLVER=thread
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-
-volumes:
-  manhua-data:
