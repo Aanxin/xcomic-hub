@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}{{ comic.title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4 text-center mb-4">
+        {% if comic.cover %}
+        <img src="{{ url_for('main.cover', filename=comic.cover) }}" class="detail-cover img-fluid" alt="{{ comic.title }}">
+        {% else %}
+        <div class="cover-placeholder" style="height: 400px;">
+            <i class="bi bi-book" style="font-size: 6rem;"></i>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-8">
+        <h2 class="gradient-text">{{ comic.title }}</h2>
+        {% if comic.title_jp %}
+        <div class="mb-2" style="color: var(--text-secondary); font-size: 0.9rem;">{{ comic.title_jp }}</div>
+        {% endif %}
+        <hr style="border-color: var(--border-color);">
+
+        <div class="row mb-3">
+            {% if comic.category %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-bookmark"></i> 分类：</span>
+                <a href="{{ url_for('main.index', search='category:' + comic.category) }}" class="info-link">{{ comic.category }}</a>
+            </div>
+            {% endif %}
+            {% if comic.author %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-person"></i> 作者：</span>
+                <a href="{{ url_for('main.index', search='author:' + comic.author) }}" class="info-link">{{ comic.author }}</a>
+            </div>
+            {% endif %}
+            {% if comic.uploader %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-upload"></i> 上传者：</span>
+                <a href="{{ url_for('main.index', search='uploader:' + comic.uploader) }}" class="info-link">{{ comic.uploader }}</a>
+            </div>
+            {% endif %}
+            {% if comic.language %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-translate"></i> 语言：</span>
+                <a href="{{ url_for('main.index', search='language:' + comic.language) }}" class="info-link">{{ comic.language }}</a>
+                {% if comic.is_translated %}
+                <span class="badge" style="background: var(--accent); font-size: 0.65em; vertical-align: super; margin-left: 2px;">TR</span>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if comic.publisher %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-building"></i> 出版社：</span>
+                <a href="{{ url_for('main.index', search='publisher:' + comic.publisher) }}" class="info-link">{{ comic.publisher }}</a>
+            </div>
+            {% endif %}
+            {% if comic.date %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-calendar"></i> 日期：</span>
+                <span class="info-value">{{ comic.date }}</span>
+            </div>
+            {% endif %}
+            {% if comic.page_count %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-file-earmark-image"></i> 页数：</span>
+                <span class="info-value">{{ comic.page_count }}</span>
+            </div>
+            {% endif %}
+            {% if comic.favorited %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-heart"></i> 收藏次数：</span>
+                <span class="info-value">{{ comic.favorited }}</span>
+            </div>
+            {% endif %}
+            {% if comic.status %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-flag"></i> 状态：</span>
+                <span class="info-value">{{ comic.status }}</span>
+            </div>
+            {% endif %}
+            {% if comic.genre %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-tag"></i> 类型：</span>
+                <a href="{{ url_for('main.index', search='genre:' + (comic.genre|map_tag)) }}" class="info-link">{{ comic.genre|map_tag }}</a>
+            </div>
+            {% endif %}
+            {% if comic.rating %}
+            <div class="col-sm-6 mb-2 info-row">
+                <span class="info-label"><i class="bi bi-star"></i> 评分：</span>
+                <span class="info-value">
+                    {% for i in range(5) %}
+                        {% if i < comic.rating|round(0)|int %}
+                        <i class="bi bi-star-fill text-warning"></i>
+                        {% elif i < comic.rating %}
+                        <i class="bi bi-star-half text-warning"></i>
+                        {% else %}
+                        <i class="bi bi-star text-secondary"></i>
+                        {% endif %}
+                    {% endfor %}
+                    {{ "%.2f"|format(comic.rating) }}
+                    {% if comic.rating_count %}
+                    <span style="color: var(--text-muted); font-size: 0.8em;">({{ comic.rating_count }}人)</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if comic.tags %}
+        <div class="mb-3">
+            <span class="info-label"><i class="bi bi-tags"></i> 标签：</span>
+            {% for cat, vals in grouped_tags.items() %}
+            <div class="ms-4 mt-1">
+                <span style="color: var(--accent); font-weight: bold;">{{ cat|map_tag }}</span>:
+                {% for val in vals %}
+                <a href="{{ url_for('main.index', search=cat + ':' + (val|map_tag)) }}" class="badge tag-badge" style="text-decoration: none;">{{ val|map_tag }}</a>
+                {% endfor %}
+            </div>
+            {% endfor %}
+            {% if uncat_tags %}
+            <div class="ms-4 mt-1">
+                {% for tag in uncat_tags %}
+                <a href="{{ url_for('main.index', search=tag|map_tag) }}" class="badge tag-badge" style="text-decoration: none;">{{ tag|map_tag }}</a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if comic.plot %}
+        <div class="mb-3">
+            <h5 style="color: var(--text-secondary);"><i class="bi bi-text-paragraph"></i> 简介</h5>
+            <p style="line-height: 1.8;">{{ comic.plot }}</p>
+        </div>
+        {% endif %}
+
+        {% if comic.filename %}
+        <div class="mb-3 info-row">
+            <span class="info-label"><i class="bi bi-file-earmark"></i> 文件：</span>
+            <span class="info-value">{{ comic.filename }}</span>
+            <span style="color: var(--text-muted);">（{{ "%.1f"|format(comic.file_size / 1024 / 1024) }} MB）</span>
+        </div>
+        {% endif %}
+
+        {% if history %}
+        <div class="mb-3 progress-bar-section">
+            <h6 style="color: var(--text-secondary); margin-bottom: 8px;"><i class="bi bi-clock-history"></i> 阅读记录</h6>
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="info-value">
+                    <i class="bi bi-bookmark"></i> 读到第 {{ history.last_page }} / {{ history.total_pages }} 页
+                </span>
+                <span style="color: var(--text-secondary);">
+                    <i class="bi bi-eye"></i> 阅读 {{ history.read_count }} 次
+                </span>
+                {% if history.last_read_at %}
+                <span style="color: var(--text-muted); font-size: 0.85rem;">
+                    <i class="bi bi-clock"></i> {{ history.last_read_at.strftime('%Y-%m-%d %H:%M') }}
+                </span>
+                {% endif %}
+            </div>
+            {% if history.total_pages > 0 %}
+            <div class="progress mt-2" style="height: 6px; background-color: var(--bg-tertiary);">
+                <div class="progress-bar" role="progressbar"
+                     style="width: {{ history.progress_percent }}%; background-color: var(--accent);"
+                     aria-valuenow="{{ history.progress_percent }}" aria-valuemin="0" aria-valuemax="100">
+                </div>
+            </div>
+            <small style="color: var(--text-muted);">{{ history.progress_percent }}% {% if history.is_finished %}✅ 已读完{% endif %}</small>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if collection_comics|length > 1 %}
+        <div class="mb-3 progress-bar-section">
+            <h6 style="color: var(--accent); margin-bottom: 10px;">
+                <i class="bi bi-collection"></i> {{ comic.collection.name }}
+                <small style="color: var(--text-muted);">（共 {{ collection_comics|length }} 话）</small>
+            </h6>
+            <div class="d-flex flex-wrap gap-2">
+                {% for c in collection_comics %}
+                {% if c.id == comic.id %}
+                <span class="badge" style="background-color: var(--accent); font-size: 0.85rem; padding: 6px 12px;">
+                    {{ c.volume or c.title }}
+                </span>
+                {% else %}
+                <a href="{{ url_for('main.detail', comic_id=c.id) }}" class="badge"
+                   style="background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 0.85rem; padding: 6px 12px; text-decoration: none;">
+                    {{ c.volume or c.title }}
+                </a>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="mb-3" style="color: var(--text-muted); font-size: 0.85rem;">
+            <span>添加时间：{{ comic.created_at.strftime('%Y-%m-%d %H:%M') if comic.created_at else '未知' }}</span>
+            <span class="ms-3">更新时间：{{ comic.updated_at.strftime('%Y-%m-%d %H:%M') if comic.updated_at else '未知' }}</span>
+            {% if comic.source_url %}
+            <span class="ms-3">来源：<a href="{{ comic.source_url }}" target="_blank" class="info-link">{{ comic.source_url|truncate(50) }}</a></span>
+            {% endif %}
+        </div>
+
+        {% if comic.torrent_urls %}
+        <div class="mb-3">
+            <span class="info-label"><i class="bi bi-magnet"></i> 种子链接：</span>
+            {% for url in comic.torrent_urls.split(',') %}
+            {% if url.strip() %}
+            <div class="ms-4 mt-1">
+                <a href="{{ url.strip() }}" target="_blank" class="info-link" style="font-size: 0.85rem; word-break: break-all;">{{ url.strip()|truncate(80) }}</a>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2 mt-3 flex-wrap">
+            {% if readable %}
+            <a href="{{ url_for('main.reader', comic_id=comic.id, start=1) }}" class="btn btn-outline-light">
+                <i class="bi bi-book"></i> 从头开始
+            </a>
+            {% if history and history.last_page > 1 %}
+            <a href="{{ url_for('main.reader', comic_id=comic.id) }}" class="btn btn-manhua">
+                <i class="bi bi-book-half"></i> 继续阅读（第{{ history.last_page }}页）
+            </a>
+            {% endif %}
+            {% endif %}
+            {% if comic.filename %}
+            <a href="{{ url_for('main.download', comic_id=comic.id) }}" class="btn btn-outline-light">
+                <i class="bi bi-download"></i> 下载
+            </a>
+            {% endif %}
+            <a href="{{ url_for('main.export_nfo', comic_id=comic.id) }}" class="btn btn-outline-light">
+                <i class="bi bi-file-earmark-code"></i> 导出NFO
+            </a>
+            <a href="{{ url_for('main.edit', comic_id=comic.id) }}" class="btn btn-outline-light">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            <button class="btn {{ 'btn-danger' if comic.is_favorite else 'btn-outline-light' }}"
+                    onclick="toggleFavorite(this, {{ comic.id }})">
+                <i class="bi {{ 'bi-heart-fill' if comic.is_favorite else 'bi-heart' }}"></i>
+                {{ '已收藏' if comic.is_favorite else '收藏' }}
+            </button>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                <i class="bi bi-trash"></i> 删除
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleFavorite(btn, comicId) {
+    fetch('/api/comic/' + comicId + '/favorite', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            const icon = btn.querySelector('i');
+            if (data.is_favorite) {
+                btn.className = 'btn btn-danger';
+                icon.className = 'bi bi-heart-fill';
+                btn.lastChild.textContent = ' 已收藏';
+                showGlobalToast('已收藏', 'success');
+            } else {
+                btn.className = 'btn btn-outline-light';
+                icon.className = 'bi bi-heart';
+                btn.lastChild.textContent = ' 收藏';
+                showGlobalToast('已取消收藏');
+            }
+        });
+}
+</script>
+{% endblock %}
+
+{% block modals %}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" style="color: var(--accent);">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除「{{ comic.title }}」吗？此操作不可撤销。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">取消</button>
+                <form action="{{ url_for('main.delete', comic_id=comic.id) }}" method="POST" style="display:inline;">
+                    <button type="submit" class="btn btn-danger">确认删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

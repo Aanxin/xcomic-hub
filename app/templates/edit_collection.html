@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}编辑合集 - {{ collection.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="page-header">
+            <h2 class="gradient-text">编辑合集信息</h2>
+            <p>修改合集名称、简介和封面</p>
+        </div>
+        <form action="{{ url_for('main.edit_collection', collection_id=collection.id) }}" method="POST" enctype="multipart/form-data">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">合集名称 *</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ collection.name }}" required>
+                        <div class="form-text">修改名称后，漫画文件、封面和NFO会自动移动到新目录</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">简介</label>
+                        <textarea class="form-control" id="description" name="description" rows="4">{{ collection.description or '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-image"></i> 封面</h5>
+                    {% if collection.cover %}
+                    <div class="mb-3">
+                        <img src="{{ url_for('main.cover', filename=collection.cover) }}" style="max-height: 150px; border-radius: var(--radius-md);" alt="当前封面">
+                    </div>
+                    {% else %}
+                    <div class="mb-3" style="color: var(--text-muted);">暂无封面（将自动使用第一本漫画的封面）</div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="cover_file" class="form-label">自定义封面图片</label>
+                        <input class="form-control" type="file" id="cover_file" name="cover_file" accept=".jpg,.jpeg,.png,.webp,.gif">
+                        <div class="form-text">上传后将替换当前封面；不上传则自动使用第一本漫画的封面</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-file-earmark-code"></i> NFO 元数据</h5>
+                    {% if collection.nfo_file %}
+                    <div class="mb-3">
+                        <span class="info-label">当前NFO：</span>
+                        <span class="info-value">{{ collection.nfo_file }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="form-text">编辑合集信息后，NFO 文件会自动更新</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-manhua btn-lg">
+                    <i class="bi bi-check-circle"></i> 保存
+                </button>
+                <a href="{{ url_for('main.collection_detail', collection_id=collection.id) }}" class="btn btn-outline-light btn-lg">
+                    取消
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

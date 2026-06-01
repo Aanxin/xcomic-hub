@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ collection.name }} - 合集{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% if collection.cover %}
+        <img src="{{ url_for('main.cover', filename=collection.cover) }}" class="img-fluid rounded" alt="{{ collection.name }}" style="border-radius: var(--radius-md); box-shadow: var(--shadow-lg);">
+        {% else %}
+        <div class="cover-placeholder" style="height: 300px; border-radius: var(--radius-md);">
+            <i class="bi bi-collection-fill" style="font-size: 4rem;"></i>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-9">
+        <h3 class="gradient-text"><i class="bi bi-collection"></i> {{ collection.name }}</h3>
+        {% if collection.description %}
+        <p style="color: var(--text-secondary);">{{ collection.description }}</p>
+        {% endif %}
+        <p style="color: var(--text-muted); font-size: 0.85rem;">
+            <i class="bi bi-book"></i> 共 {{ comics|length }} 话
+            <span class="ms-3"><i class="bi bi-calendar"></i> {{ collection.created_at.strftime('%Y-%m-%d') if collection.created_at else '未知' }}</span>
+        </p>
+        <div class="d-flex gap-2 mt-2">
+            <a href="{{ url_for('main.edit_collection', collection_id=collection.id) }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            <a href="{{ url_for('main.export_collection_nfo', collection_id=collection.id) }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-file-earmark-code"></i> 导出NFO
+            </a>
+            <button class="btn {{ 'btn-danger' if collection.is_favorite else 'btn-outline-light' }} btn-sm"
+                    onclick="toggleColFavorite(this, {{ collection.id }})">
+                <i class="bi {{ 'bi-heart-fill' if collection.is_favorite else 'bi-heart' }}"></i>
+                {{ '已收藏' if collection.is_favorite else '收藏' }}
+            </button>
+        </div>
+    </div>
+</div>
+
+<hr style="border-color: var(--border-color);">
+
+<h5 class="mb-3" style="color: var(--text-primary);"><i class="bi bi-list-ol"></i> 话数列表</h5>
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3 stagger-in">
+    {% for comic in comics %}
+    <div class="col">
+        <div class="card h-100" style="cursor: pointer;" onclick="location.href='{{ url_for('main.detail', comic_id=comic.id) }}'">
+            <div class="d-flex">
+                {% if comic.cover %}
+                <img src="{{ url_for('main.cover', filename=comic.cover) }}" style="width: 80px; height: 110px; object-fit: cover; border-radius: var(--radius-md) 0 0 var(--radius-md);" alt="">
+                {% else %}
+                <div style="width: 80px; height: 110px; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md) 0 0 var(--radius-md);">
+                    <i class="bi bi-book" style="color: var(--accent); font-size: 1.5rem;"></i>
+                </div>
+                {% endif %}
+                <div class="card-body py-2 px-3" style="flex: 1; min-width: 0;">
+                    <h6 class="text-truncate mb-1" style="color: var(--text-primary);">{{ comic.volume or comic.title }}</h6>
+                    {% if comic.author %}
+                    <small style="color: var(--text-muted);"><i class="bi bi-person"></i> {{ comic.author }}</small>
+                    {% endif %}
+                    {% set h = history_map.get(comic.id) %}
+                    {% if h %}
+                    <div class="mt-1">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small style="color: var(--text-secondary);">{{ h.last_page }}/{{ h.total_pages }}</small>
+                            <small style="color: var(--accent);">{{ h.progress_percent }}%</small>
+                        </div>
+                        <div class="progress mt-1" style="height: 2px; background-color: var(--bg-tertiary);">
+                            <div class="progress-bar" style="width: {{ h.progress_percent }}%; background-color: var(--accent);"></div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+function toggleColFavorite(btn, colId) {
+    fetch('/api/collection/' + colId + '/favorite', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            const icon = btn.querySelector('i');
+            if (data.is_favorite) {
+                btn.className = 'btn btn-danger btn-sm';
+                icon.className = 'bi bi-heart-fill';
+                btn.lastChild.textContent = ' 已收藏';
+                showGlobalToast('已收藏', 'success');
+            } else {
+                btn.className = 'btn btn-outline-light btn-sm';
+                icon.className = 'bi bi-heart';
+                btn.lastChild.textContent = ' 收藏';
+                showGlobalToast('已取消收藏');
+            }
+        });
+}
+</script>
+{% endblock %}

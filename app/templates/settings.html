@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="page-header">
+            <h2 class="gradient-text">系统设置</h2>
+            <p>配置站点、上传、代理和下载参数</p>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+                <div class="stat-card">
+                    <div class="stat-value">{{ total_comics }}</div>
+                    <div class="stat-label">漫画总数</div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="stat-card">
+                    <div class="stat-value">{{ "%.1f"|format(total_size / 1024 / 1024 / 1024) }}</div>
+                    <div class="stat-label">存储空间 (GB)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-4 mb-2">
+                <div class="stat-card">
+                    <div class="stat-value">{{ pages_cache_display }}</div>
+                    <div class="stat-label">页面缓存</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="stat-card">
+                    <div class="stat-value">{{ covers_cache_display }}</div>
+                    <div class="stat-label">封面缩略图</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="stat-card">
+                    <div class="stat-value">{{ total_cache_display }}</div>
+                    <div class="stat-label">合计占用</div>
+                </div>
+            </div>
+        </div>
+
+        <form action="{{ url_for('main.settings') }}" method="POST">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-database"></i> 缓存管理</h5>
+                    <div class="mb-3">
+                        <label for="max_cache_size" class="form-label">页面缓存上限（MB）</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="max_cache_size" name="max_cache_size" value="{{ max_cache_size }}" min="0" max="1048576" placeholder="0">
+                            <span class="input-group-text">MB</span>
+                        </div>
+                        <div class="form-text">页面缓存超过此上限时自动清理最旧的缓存。设为 0 表示不限制。</div>
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-danger" onclick="clearCache('pages')">
+                            <i class="bi bi-trash"></i> 清理页面缓存
+                        </button>
+                        <span id="cache_clear_result" class="ms-3" style="font-size: 0.9rem;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-display"></i> 显示设置</h5>
+                    <div class="mb-3">
+                        <label for="site_name" class="form-label">站点名称</label>
+                        <input type="text" class="form-control" id="site_name" name="site_name" value="{{ site_name }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="per_page" class="form-label">每页显示数量</label>
+                        <input type="number" class="form-control" id="per_page" name="per_page" value="{{ per_page }}" min="1" max="100">
+                        <div class="form-text">漫画库列表每页显示的漫画数量（1-100）</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-cloud-upload"></i> 上传设置</h5>
+                    <div class="mb-3">
+                        <label for="max_content_length" class="form-label">最大上传大小（MB）</label>
+                        <input type="number" class="form-control" id="max_content_length" name="max_content_length" value="{{ max_content_length }}" min="100" max="51200">
+                        <div class="form-text">单次上传请求的最大总大小，超过此限制的请求将被拒绝（100-51200 MB）</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="chunk_size" class="form-label">分块上传大小（MB）</label>
+                        <input type="number" class="form-control" id="chunk_size" name="chunk_size" value="{{ chunk_size }}" min="1" max="100">
+                        <div class="form-text">大文件分块上传时每块的大小，较小的值更稳定但速度稍慢（1-100 MB）</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="upload_interval" class="form-label">文件处理间隔（秒）</label>
+                        <input type="number" class="form-control" id="upload_interval" name="upload_interval" value="{{ upload_interval }}" min="0" max="30" step="0.5">
+                        <div class="form-text">批量上传时，每处理完一个文件后等待的秒数。设为 0 则不等待（0-30）</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="auto_cover" class="form-label">自动生成封面</label>
+                        <select class="form-select" id="auto_cover" name="auto_cover">
+                            <option value="1" {{ 'selected' if auto_cover == '1' else '' }}>开启（从漫画第一张图片提取）</option>
+                            <option value="0" {{ 'selected' if auto_cover == '0' else '' }}>关闭（仅使用手动上传的封面）</option>
+                        </select>
+                        <div class="form-text">上传时是否自动从压缩包中提取第一张图片作为封面缩略图</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cover_width" class="form-label">封面缩略图宽度（像素）</label>
+                        <input type="number" class="form-control" id="cover_width" name="cover_width" value="{{ cover_width }}" min="100" max="1000">
+                        <div class="form-text">自动生成的封面缩略图宽度，高度按比例缩放（100-1000）</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cover_quality" class="form-label">封面图片质量</label>
+                        <input type="number" class="form-control" id="cover_quality" name="cover_quality" value="{{ cover_quality }}" min="10" max="100">
+                        <div class="form-text">封面 JPEG 压缩质量，数值越高质量越好但文件越大（10-100）</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-globe"></i> 网络代理</h5>
+                    <div class="mb-3">
+                        <label for="proxy_enabled" class="form-label">启用代理</label>
+                        <select class="form-select" id="proxy_enabled" name="proxy_enabled">
+                            <option value="0" {{ 'selected' if proxy_enabled == '0' else '' }}>关闭</option>
+                            <option value="1" {{ 'selected' if proxy_enabled == '1' else '' }}>开启</option>
+                        </select>
+                        <div class="form-text">开启后，采集信息等网络请求将通过代理服务器发送</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_type" class="form-label">代理类型</label>
+                        <select class="form-select" id="proxy_type" name="proxy_type">
+                            <option value="http" {{ 'selected' if proxy_type == 'http' else '' }}>HTTP</option>
+                            <option value="https" {{ 'selected' if proxy_type == 'https' else '' }}>HTTPS</option>
+                            <option value="socks5" {{ 'selected' if proxy_type == 'socks5' else '' }}>SOCKS5</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_host" class="form-label">代理地址</label>
+                        <input type="text" class="form-control" id="proxy_host" name="proxy_host" value="{{ proxy_host }}" placeholder="如：127.0.0.1">
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_port" class="form-label">代理端口</label>
+                        <input type="number" class="form-control" id="proxy_port" name="proxy_port" value="{{ proxy_port }}" min="1" max="65535" placeholder="如：7890">
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_user" class="form-label">代理用户名（可选）</label>
+                        <input type="text" class="form-control" id="proxy_user" name="proxy_user" value="{{ proxy_user }}" placeholder="留空则不使用认证">
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_pass" class="form-label">代理密码（可选）</label>
+                        <input type="password" class="form-control" id="proxy_pass" name="proxy_pass" value="{{ proxy_pass }}" placeholder="留空则不使用认证">
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-light" id="btn_test_proxy" onclick="testProxy()">
+                            <i class="bi bi-wifi"></i> 测试链接
+                        </button>
+                        <span id="proxy_test_result" class="ms-3" style="font-size: 0.9rem;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-cookie"></i> 网站 Cookie</h5>
+                    <div class="form-text mb-3">采集信息时将携带对应网站的 Cookie，用于访问需要登录的页面</div>
+                    <div class="mb-3">
+                        <label for="cookie_ehentai" class="form-label">E-Hentai Cookie</label>
+                        <textarea class="form-control" id="cookie_ehentai" name="cookie_ehentai" rows="3" placeholder="ipb_member_id=xxx; ipb_pass_hash=xxx; ...">{{ cookie_ehentai }}</textarea>
+                        <div class="form-text">从浏览器开发者工具 → Application → Cookies 中复制 e-hentai.org 的 Cookie</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cookie_exhentai" class="form-label">ExHentai Cookie</label>
+                        <textarea class="form-control" id="cookie_exhentai" name="cookie_exhentai" rows="3" placeholder="ipb_member_id=xxx; ipb_pass_hash=xxx; igneous=xxx; ...">{{ cookie_exhentai }}</textarea>
+                        <div class="form-text">ExHentai 需要额外的 igneous Cookie 才能访问</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cookie_nhentai" class="form-label">nhentai Cookie</label>
+                        <textarea class="form-control" id="cookie_nhentai" name="cookie_nhentai" rows="3" placeholder="cf_clearance=xxx; ...">{{ cookie_nhentai }}</textarea>
+                        <div class="form-text">nhentai 可能需要 cf_clearance Cookie 绕过 Cloudflare 验证</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-download"></i> qBittorrent</h5>
+                    <div class="form-text mb-3">配置 qBittorrent Web UI 连接，用于自动添加种子下载</div>
+                    <div class="mb-3">
+                        <label for="qb_enabled" class="form-label">启用 qBittorrent</label>
+                        <select class="form-select" id="qb_enabled" name="qb_enabled">
+                            <option value="0" {{ 'selected' if qb_enabled == '0' else '' }}>关闭</option>
+                            <option value="1" {{ 'selected' if qb_enabled == '1' else '' }}>开启</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_host" class="form-label">Web UI 地址</label>
+                        <input type="text" class="form-control" id="qb_host" name="qb_host" value="{{ qb_host }}" placeholder="如：127.0.0.1">
+                        <div class="form-text">Docker 部署时请填写 host.docker.internal 而非 127.0.0.1</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_port" class="form-label">Web UI 端口</label>
+                        <input type="number" class="form-control" id="qb_port" name="qb_port" value="{{ qb_port }}" min="1" max="65535" placeholder="如：8080">
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_user" class="form-label">用户名</label>
+                        <input type="text" class="form-control" id="qb_user" name="qb_user" value="{{ qb_user }}" placeholder="默认 admin">
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_pass" class="form-label">密码</label>
+                        <input type="password" class="form-control" id="qb_pass" name="qb_pass" value="{{ qb_pass }}" placeholder="默认 adminadmin">
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_category" class="form-label">种子分类（可选）</label>
+                        <input type="text" class="form-control" id="qb_category" name="qb_category" value="{{ qb_category }}" placeholder="如：xcomic">
+                    </div>
+                    <div class="mb-3">
+                        <label for="qb_download_path" class="form-label">下载路径（可选）</label>
+                        <input type="text" class="form-control" id="qb_download_path" name="qb_download_path" value="{{ qb_download_path }}" placeholder="如：/downloads/xcomic">
+                        <div class="form-text">留空则使用 qBittorrent 默认下载路径</div>
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-light" onclick="testQB()">
+                            <i class="bi bi-wifi"></i> 测试链接
+                        </button>
+                        <span id="qb_test_result" class="ms-3" style="font-size: 0.9rem;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-tags"></i> 标签映射</h5>
+                    <div class="form-text mb-3">将英文标签映射为中文显示名称，每行一个，格式为：英文=中文</div>
+                    <div class="mb-3">
+                        <label for="tag_mapping" class="form-label">标签映射规则</label>
+                        <textarea class="form-control" id="tag_mapping" name="tag_mapping" rows="6" placeholder="doujinshi=同人&#10;artist cg=画师CG&#10;full color=全彩">{{ tag_mapping }}</textarea>
+                        <div class="form-text">每行一条规则，等号左边为原始标签（英文），右边为显示名称（中文）。匹配时不区分大小写。</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                <button type="submit" class="btn btn-manhua btn-lg px-5">
+                    <i class="bi bi-check-circle"></i> 保存设置
+                </button>
+                <button type="button" class="btn btn-outline-info btn-lg px-4" onclick="backupSettings()">
+                    <i class="bi bi-download"></i> 备份设置
+                </button>
+                <button type="button" class="btn btn-outline-warning btn-lg px-4" onclick="document.getElementById('import-file').click()">
+                    <i class="bi bi-upload"></i> 导入设置
+                </button>
+                <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importSettings(this)">
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function testProxy() {
+    var btn = document.getElementById('btn_test_proxy');
+    var result = document.getElementById('proxy_test_result');
+    btn.disabled = true;
+    result.textContent = '测试中...';
+    result.style.color = 'var(--text-muted)';
+
+    fetch('/api/test-proxy', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            proxy_enabled: document.getElementById('proxy_enabled').value,
+            proxy_type: document.getElementById('proxy_type').value,
+            proxy_host: document.getElementById('proxy_host').value,
+            proxy_port: document.getElementById('proxy_port').value,
+            proxy_user: document.getElementById('proxy_user').value,
+            proxy_pass: document.getElementById('proxy_pass').value
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        if (data.success) {
+            result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--success)';
+        } else {
+            result.innerHTML = '<i class="bi bi-x-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--accent)';
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        result.innerHTML = '<i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message;
+        result.style.color = 'var(--accent)';
+    });
+}
+
+function testQB() {
+    var result = document.getElementById('qb_test_result');
+    result.textContent = '测试中...';
+    result.style.color = 'var(--text-muted)';
+
+    fetch('/api/test-qbittorrent', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            qb_host: document.getElementById('qb_host').value,
+            qb_port: document.getElementById('qb_port').value,
+            qb_user: document.getElementById('qb_user').value,
+            qb_pass: document.getElementById('qb_pass').value
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--success)';
+        } else {
+            result.innerHTML = '<i class="bi bi-x-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--accent)';
+        }
+    })
+    .catch(function(err) {
+        result.innerHTML = '<i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message;
+        result.style.color = 'var(--accent)';
+    });
+}
+
+function backupSettings() {
+    window.location.href = '/api/backup-settings';
+}
+
+function importSettings(input) {
+    if (!input.files || !input.files[0]) return;
+    var file = input.files[0];
+    var formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/import-settings', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            showGlobalToast(data.message, 'success');
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            showGlobalToast(data.message, 'error');
+        }
+    })
+    .catch(function(err) {
+        showGlobalToast('导入失败: ' + err.message, 'error');
+    });
+    input.value = '';
+}
+
+function clearCache(type) {
+    var result = document.getElementById('cache_clear_result');
+    if (!confirm('确定要清理页面缓存吗？此操作不可撤销。')) return;
+    result.textContent = '清理中...';
+    result.style.color = 'var(--text-muted)';
+
+    fetch('/api/clear-cache', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: 'pages'})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--success)';
+            setTimeout(function() { location.reload(); }, 1500);
+        } else {
+            result.innerHTML = '<i class="bi bi-x-circle-fill"></i> ' + data.message;
+            result.style.color = 'var(--accent)';
+        }
+    })
+    .catch(function(err) {
+        result.innerHTML = '<i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message;
+        result.style.color = 'var(--accent)';
+    });
+}
+</script>
+{% endblock %}

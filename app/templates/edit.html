@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block title %}编辑 - {{ comic.title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="page-header">
+            <h2 class="gradient-text">编辑漫画信息</h2>
+            <p>修改漫画元数据、封面和合集归属</p>
+        </div>
+        <form action="{{ url_for('main.edit', comic_id=comic.id) }}" method="POST" enctype="multipart/form-data">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-cloud-download"></i> 采集信息</h5>
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#scrape-url-tab" type="button" role="tab">
+                                <i class="bi bi-link-45deg"></i> 网址
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#scrape-file-tab" type="button" role="tab">
+                                <i class="bi bi-file-earmark-code"></i> 本地文件
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#scrape-clipboard-tab" type="button" role="tab">
+                                <i class="bi bi-clipboard"></i> 剪贴板
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane active" id="scrape-url-tab" role="tabpanel">
+                            <div class="input-group mb-2">
+                                <input type="url" class="form-control" id="scrape_url" placeholder="https://e-hentai.org/g/...">
+                                <button type="button" class="btn btn-manhua" onclick="scrapeFromUrl(false)">
+                                    <i class="bi bi-search"></i> 采集
+                                </button>
+                                <button type="button" class="btn btn-outline-light" onclick="scrapeFromUrl(true)">
+                                    <i class="bi bi-arrow-repeat"></i> 重新采集
+                                </button>
+                            </div>
+                            <div class="form-text">输入网页地址，服务端抓取并提取信息。重新采集会覆盖已有内容</div>
+                        </div>
+                        <div class="tab-pane" id="scrape-file-tab" role="tabpanel">
+                            <div class="input-group mb-2">
+                                <input class="form-control" type="file" id="scrape_file" accept=".html,.htm">
+                                <button type="button" class="btn btn-manhua" onclick="scrapeFromFile(false)">
+                                    <i class="bi bi-search"></i> 采集
+                                </button>
+                                <button type="button" class="btn btn-outline-light" onclick="scrapeFromFile(true)">
+                                    <i class="bi bi-arrow-repeat"></i> 重新采集
+                                </button>
+                            </div>
+                            <div class="form-text">选择本地保存的网页文件（.html / .htm）。重新采集会覆盖已有内容</div>
+                        </div>
+                        <div class="tab-pane" id="scrape-clipboard-tab" role="tabpanel">
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-manhua" onclick="pasteFromClipboard(false)">
+                                    <i class="bi bi-clipboard-check"></i> 粘贴并填充
+                                </button>
+                                <button type="button" class="btn btn-outline-light" onclick="pasteFromClipboard(true)">
+                                    <i class="bi bi-arrow-repeat"></i> 覆盖粘贴
+                                </button>
+                            </div>
+                            <div class="form-text">从剪贴板读取浏览器插件采集的 JSON 数据，自动填充表单。覆盖粘贴会替换已有内容</div>
+                            <div class="form-text text-muted mt-1"><small>提示：先在 ExHentai / nhentai 详情页点击"复制NFO数据"按钮</small></div>
+                        </div>
+                    </div>
+                    <span id="scrapeStatus" class="mt-2 d-block" style="color: var(--text-muted);"></span>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="title" class="form-label">标题 *</label>
+                            <input type="text" class="form-control" id="title" name="title" value="{{ comic.title }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="title_jp" class="form-label">日文标题</label>
+                            <input type="text" class="form-control" id="title_jp" name="title_jp" value="{{ comic.title_jp }}">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="author" class="form-label">作者</label>
+                            <input type="text" class="form-control" id="author" name="author" value="{{ comic.author }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="uploader" class="form-label">上传者</label>
+                            <input type="text" class="form-control" id="uploader" name="uploader" value="{{ comic.uploader }}">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="category" class="form-label">分类</label>
+                            <input type="text" class="form-control" id="category" name="category" value="{{ comic.category }}" placeholder="如：Doujinshi, Manga">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="genre" class="form-label">类型</label>
+                            <input type="text" class="form-control" id="genre" name="genre" value="{{ comic.genre }}" placeholder="如：动作, 冒险">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="language" class="form-label">语言</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="language" name="language" value="{{ comic.language }}">
+                                <div class="input-group-text" style="background-color: var(--bg-secondary); border-color: var(--border-color);">
+                                    <input class="form-check-input mt-0" type="checkbox" id="is_translated" name="is_translated" {{ 'checked' if comic.is_translated else '' }} style="background-color: var(--bg-tertiary); border-color: var(--bg-tertiary);">
+                                    <label for="is_translated" class="form-check-label ms-2" style="color: var(--text-secondary); font-size: 0.85rem;">翻译</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="date" class="form-label">日期</label>
+                            <input type="text" class="form-control" id="date" name="date" value="{{ comic.date }}" placeholder="如：2026-01-16">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="publisher" class="form-label">出版社</label>
+                            <input type="text" class="form-control" id="publisher" name="publisher" value="{{ comic.publisher }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="status" class="form-label">状态</label>
+                            <select class="form-select" id="status" name="status">
+                                <option value="">未知</option>
+                                <option value="连载中" {{ 'selected' if comic.status == '连载中' else '' }}>连载中</option>
+                                <option value="已完结" {{ 'selected' if comic.status == '已完结' else '' }}>已完结</option>
+                                <option value="休刊" {{ 'selected' if comic.status == '休刊' else '' }}>休刊</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="rating" class="form-label">评分 (0-5)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="rating" name="rating" value="{{ comic.rating }}" min="0" max="5" step="0.01">
+                                <input type="number" class="form-control" id="rating_count" name="rating_count" value="{{ comic.rating_count }}" min="0" placeholder="评分人数" style="max-width: 120px;">
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="page_count" class="form-label">页数</label>
+                            <input type="number" class="form-control" id="page_count" name="page_count" value="{{ comic.page_count }}" min="0">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="favorited" class="form-label">收藏次数</label>
+                            <input type="number" class="form-control" id="favorited" name="favorited" value="{{ comic.favorited }}" min="0">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="tags" class="form-label">标签（逗号分隔）</label>
+                            <input type="text" class="form-control" id="tags" name="tags" value="{{ comic.tags }}" placeholder="标签1, 标签2">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="collection_name" class="form-label">合集名称</label>
+                            <input type="text" class="form-control" id="collection_name" name="collection_name" value="{{ collection_name }}" placeholder="留空则为单本漫画">
+                            <div class="form-text">填写后归入合集，文件存入同名子文件夹</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="volume" class="form-label">卷号</label>
+                            <input type="text" class="form-control" id="volume" name="volume" value="{{ comic.volume }}" placeholder="如：第1话、Vol.1">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="source_url" class="form-label">来源网址</label>
+                            <input type="url" class="form-control" id="source_url" name="source_url" value="{{ comic.source_url }}" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="torrent_urls" class="form-label">种子链接（逗号分隔）</label>
+                            <textarea class="form-control" id="torrent_urls" name="torrent_urls" rows="2" placeholder="https://ehtracker.org/get/xxx.torrent, ...">{{ comic.torrent_urls }}</textarea>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="plot" class="form-label">简介</label>
+                        <textarea class="form-control" id="plot" name="plot" rows="4">{{ comic.plot }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-image"></i> 更换封面</h5>
+                    <div class="mb-3" id="coverPreviewWrapper">
+                        {% if comic.cover %}
+                        <img id="coverPreview" src="{{ url_for('main.cover', filename=comic.cover) }}" style="max-height: 150px; border-radius: var(--radius-md);" alt="当前封面">
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="cover_file" class="form-label">选择新封面</label>
+                        <input class="form-control" type="file" id="cover_file" name="cover_file" accept=".jpg,.jpeg,.png,.webp,.gif">
+                    </div>
+                    {% if comic.filename %}
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-light btn-sm" onclick="regenerateCover({{ comic.id }})" id="regenerateCoverBtn">
+                            <i class="bi bi-arrow-repeat"></i> 更新封面
+                        </button>
+                        <span id="regenerateStatus" style="color: var(--text-muted); font-size: 0.85rem;"></span>
+                    </div>
+                    <div class="form-text">从漫画文件自动重新生成封面图</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-file-earmark-code"></i> 更换 NFO 元数据</h5>
+                    {% if comic.nfo_file %}
+                    <div class="mb-3">
+                        <span class="info-label">当前NFO：</span>
+                        <span class="info-value">{{ comic.nfo_file }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="nfo_file" class="form-label">选择新 .nfo 文件</label>
+                        <input class="form-control" type="file" id="nfo_file" name="nfo_file" accept=".nfo">
+                        <div class="form-text">上传新NFO将覆盖现有元数据信息</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-manhua btn-lg">
+                    <i class="bi bi-check-circle"></i> 保存
+                </button>
+                <a href="{{ url_for('main.detail', comic_id=comic.id) }}" class="btn btn-outline-light btn-lg">
+                    取消
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<style>
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+</style>
+<script>
+var _scrapeOverwrite = false;
+
+function fillForm(data) {
+    if (data.error) {
+        document.getElementById('scrapeStatus').textContent = data.error;
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        return;
+    }
+    var overwrite = _scrapeOverwrite;
+    var filled = [];
+    function setVal(id, val, label) {
+        var el = document.getElementById(id);
+        if (val && el && (overwrite || !el.value)) {
+            el.value = val;
+            filled.push(label);
+        }
+    }
+    setVal('title', data.title, '标题');
+    setVal('title_jp', data.title_jp, '日文标题');
+    setVal('author', data.author, '作者');
+    setVal('category', data.category, '分类');
+    setVal('uploader', data.uploader, '上传者');
+    setVal('language', data.language, '语言');
+    if (data.is_translated) {
+        document.getElementById('is_translated').checked = true;
+        if (!filled.includes('语言')) filled.push('翻译标记');
+    }
+    setVal('date', data.date, '日期');
+    setVal('tags', data.tags, '标签');
+    setVal('source_url', data.source_url || '', '来源网址');
+    if (data.rating && (overwrite || !document.getElementById('rating').value)) {
+        document.getElementById('rating').value = data.rating;
+        filled.push('评分');
+    }
+    if (data.rating_count && (overwrite || !document.getElementById('rating_count').value)) {
+        document.getElementById('rating_count').value = data.rating_count;
+        filled.push('评分人数');
+    }
+    if (data.page_count && (overwrite || !document.getElementById('page_count').value)) {
+        document.getElementById('page_count').value = data.page_count;
+        filled.push('页数');
+    }
+    if (data.favorited && (overwrite || !document.getElementById('favorited').value)) {
+        document.getElementById('favorited').value = data.favorited;
+        filled.push('收藏次数');
+    }
+    if (data.torrent_urls && (overwrite || !document.getElementById('torrent_urls').value)) {
+        document.getElementById('torrent_urls').value = data.torrent_urls;
+        filled.push('种子链接');
+    }
+    var status = document.getElementById('scrapeStatus');
+    status.textContent = filled.length > 0 ? (overwrite ? '已重新采集: ' : '已采集: ') + filled.join(', ') : '未找到可采集的信息';
+    status.style.color = filled.length > 0 ? 'var(--success)' : 'var(--text-muted)';
+    if (filled.length > 0) showGlobalToast('采集成功: ' + filled.join(', '), 'success');
+}
+
+function setScrapeLoading() {
+    document.getElementById('scrapeStatus').textContent = '采集中...';
+    document.getElementById('scrapeStatus').style.color = 'var(--text-muted)';
+}
+
+function scrapeFromUrl(overwrite) {
+    var url = document.getElementById('scrape_url').value.trim();
+    if (!url) {
+        document.getElementById('scrapeStatus').textContent = '请输入网页地址';
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        return;
+    }
+    _scrapeOverwrite = !!overwrite;
+    setScrapeLoading();
+    fetch('/api/scrape-info', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(function(r) { return r.json(); })
+    .then(fillForm)
+    .catch(function(err) {
+        document.getElementById('scrapeStatus').textContent = '采集失败: ' + err.message;
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+    });
+}
+
+function regenerateCover(comicId) {
+    var btn = document.getElementById('regenerateCoverBtn');
+    var status = document.getElementById('regenerateStatus');
+    var icon = btn.querySelector('i');
+    btn.disabled = true;
+    icon.className = 'bi bi-arrow-repeat spin';
+    status.textContent = '生成中...';
+    status.style.color = 'var(--text-muted)';
+
+    fetch('/comic/' + comicId + '/regenerate-cover', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            icon.className = 'bi bi-arrow-repeat';
+            if (data.success) {
+                status.textContent = '';
+                var preview = document.getElementById('coverPreview');
+                var coverUrl = data.cover_url + '?t=' + Date.now();
+                if (preview) {
+                    preview.src = coverUrl;
+                } else {
+                    var wrapper = document.getElementById('coverPreviewWrapper');
+                    if (wrapper) {
+                        wrapper.innerHTML = '<img id="coverPreview" src="' + coverUrl + '" style="max-height: 150px; border-radius: var(--radius-md);" alt="封面">';
+                    }
+                }
+                showGlobalToast('封面已更新', 'success');
+            } else {
+                status.textContent = data.error || '生成失败';
+                status.style.color = 'var(--accent)';
+                showGlobalToast('封面生成失败', 'error');
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            icon.className = 'bi bi-arrow-repeat';
+            status.textContent = '请求失败';
+            status.style.color = 'var(--accent)';
+            showGlobalToast('请求失败', 'error');
+        });
+}
+
+function scrapeFromFile(overwrite) {
+    var fileInput = document.getElementById('scrape_file');
+    if (!fileInput.files.length) {
+        document.getElementById('scrapeStatus').textContent = '请先选择 HTML 文件';
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        return;
+    }
+    _scrapeOverwrite = !!overwrite;
+    setScrapeLoading();
+    var formData = new FormData();
+    formData.append('html_file', fileInput.files[0]);
+    fetch('/api/scrape-info', {method: 'POST', body: formData})
+    .then(function(r) { return r.json(); })
+    .then(fillForm)
+    .catch(function(err) {
+        document.getElementById('scrapeStatus').textContent = '采集失败: ' + err.message;
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+    });
+}
+
+function pasteFromClipboard(overwrite) {
+    _scrapeOverwrite = !!overwrite;
+    setScrapeLoading();
+    if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(function(text) {
+            parseAndFill(text);
+        }).catch(function(err) {
+            document.getElementById('scrapeStatus').textContent = '无法读取剪贴板: ' + err.message;
+            document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        });
+    } else {
+        document.getElementById('scrapeStatus').textContent = '当前浏览器不支持剪贴板读取，请手动粘贴';
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        showManualPastePrompt();
+    }
+}
+
+function showManualPastePrompt() {
+    var tab = document.getElementById('scrape-clipboard-tab');
+    var existing = document.getElementById('manualPasteArea');
+    if (existing) existing.remove();
+    var textarea = document.createElement('textarea');
+    textarea.id = 'manualPasteArea';
+    textarea.className = 'form-control mt-2';
+    textarea.rows = 6;
+    textarea.placeholder = '请手动粘贴 JSON 数据到这里...';
+    tab.appendChild(textarea);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-manhua mt-2';
+    btn.textContent = '解析并填充';
+    btn.onclick = function() {
+        parseAndFill(textarea.value);
+    };
+    tab.appendChild(btn);
+}
+
+function parseAndFill(text) {
+    if (!text || !text.trim()) {
+        document.getElementById('scrapeStatus').textContent = '剪贴板为空';
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        return;
+    }
+    try {
+        var data = JSON.parse(text);
+        if (typeof data !== 'object' || data === null) {
+            throw new Error('Not an object');
+        }
+        fillForm(data);
+    } catch(e) {
+        document.getElementById('scrapeStatus').textContent = '剪贴板内容不是有效的 JSON 格式';
+        document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+    }
+}
+</script>
+{% endblock %}

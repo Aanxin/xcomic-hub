@@ -1,0 +1,477 @@
+{% extends "base.html" %}
+{% block title %}下载种子{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="page-header">
+            <h2 class="gradient-text">下载种子</h2>
+            <p>从画廊网址采集信息并下载种子</p>
+        </div>
+
+        <ul class="nav nav-tabs mb-4" id="inputTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-panel" type="button" role="tab">
+                    <i class="bi bi-link-45deg"></i> 网址下载
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="torrent-tab" data-bs-toggle="tab" data-bs-target="#torrent-panel" type="button" role="tab">
+                    <i class="bi bi-file-earmark-arrow-down"></i> 上传种子
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="nfo-tab" data-bs-toggle="tab" data-bs-target="#nfo-panel" type="button" role="tab">
+                    <i class="bi bi-clipboard-plus"></i> 粘贴NFO
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content mb-4">
+            <div class="tab-pane fade show active" id="url-panel" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3"><i class="bi bi-link-45deg"></i> 输入网址</h5>
+                        <div class="mb-3">
+                            <label for="url_input" class="form-label">画廊网址</label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" id="url_input" placeholder="https://e-hentai.org/g/xxx/xxx/ 或 https://nhentai.net/g/xxx/">
+                                <button class="btn btn-manhua" id="btn_start" onclick="startDownload()">
+                                    <i class="bi bi-cloud-download"></i> 开始
+                                </button>
+                            </div>
+                            <div class="form-text">支持 E-Hentai、ExHentai、nhentai 画廊页面，自动采集信息、生成 NFO、添加种子到 qBittorrent</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="torrent-panel" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3"><i class="bi bi-file-earmark-arrow-down"></i> 上传种子文件</h5>
+                        <div class="mb-3">
+                            <label for="torrent_file_input" class="form-label">种子文件 (.torrent)</label>
+                            <input type="file" class="form-control" id="torrent_file_input" accept=".torrent">
+                        </div>
+                        <div class="mb-3">
+                            <label for="torrent_url_input" class="form-label">画廊网址（可选，用于采集元数据）</label>
+                            <input type="url" class="form-control" id="torrent_url_input" placeholder="https://e-hentai.org/g/xxx/xxx/ 或 https://nhentai.net/g/xxx/">
+                            <div class="form-text">提供网址可自动采集标题、作者、标签等信息</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="torrent_title_input" class="form-label">标题（可选，默认取文件名）</label>
+                            <input type="text" class="form-control" id="torrent_title_input" placeholder="漫画标题">
+                        </div>
+                        <button class="btn btn-manhua" id="btn_upload_torrent" onclick="uploadTorrent()">
+                            <i class="bi bi-upload"></i> 上传并添加
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="nfo-panel" role="tabpanel">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3"><i class="bi bi-clipboard-plus"></i> 粘贴NFO数据</h5>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem;">粘贴从浏览器插件采集的 JSON 数据，自动创建漫画记录。</p>
+                        <div class="mb-3">
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-manhua btn-sm" onclick="nfoPasteFromClipboard()">
+                                    <i class="bi bi-clipboard"></i> 从剪贴板粘贴
+                                </button>
+                            </div>
+                            <textarea id="nfo_textarea" class="form-control" rows="8" placeholder='粘贴 JSON 数据，例如:&#10;{&#10;  "title": "...",&#10;  "author": "...",&#10;  "tags": "artist:xxx,tag:yyy"&#10;}'></textarea>
+                        </div>
+                        <span id="nfo_status" class="d-block mb-2" style="color: var(--text-muted); font-size: 0.85rem;"></span>
+                        <button class="btn btn-manhua" id="btn_nfo_create" onclick="createComicFromNfo()">
+                            <i class="bi bi-plus-circle"></i> 添加到队列
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="task_list" style="display:none;">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">
+                        <i class="bi bi-hourglass-split"></i> 等待队列
+                        <span id="waiting_count" class="badge bg-secondary ms-2">0</span>
+                    </h5>
+                    <div id="waiting_tasks"></div>
+                    <div id="waiting_empty" class="text-center py-3" style="color:var(--text-muted);display:none;">
+                        <i class="bi bi-inbox" style="font-size:1.5rem;"></i>
+                        <div>等待队列为空</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">
+                        <i class="bi bi-arrow-down-circle"></i> 下载队列
+                        <span id="downloading_count" class="badge ms-2" style="background:var(--accent);">0</span>
+                    </h5>
+                    <div id="downloading_tasks"></div>
+                    <div id="downloading_empty" class="text-center py-3" style="color:var(--text-muted);display:none;">
+                        <i class="bi bi-inbox" style="font-size:1.5rem;"></i>
+                        <div>下载队列为空</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">
+                        <i class="bi bi-check2-all"></i> 已完成
+                        <span id="done_count" class="badge bg-success ms-2">0</span>
+                    </h5>
+                    <div id="done_tasks"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var pollTimer = null;
+var progressTimer = null;
+
+function startDownload() {
+    var url = document.getElementById('url_input').value.trim();
+    if (!url) { showGlobalToast('请输入网址', 'error'); return; }
+    var btn = document.getElementById('btn_start');
+    btn.disabled = true;
+
+    fetch('/api/download/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        if (data.error) {
+            showGlobalToast(data.error, 'error');
+            return;
+        }
+        document.getElementById('task_list').style.display = '';
+        document.getElementById('url_input').value = '';
+        showGlobalToast('已添加到下载队列', 'success');
+        startPoll();
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        showGlobalToast('请求失败: ' + err.message, 'error');
+    });
+}
+
+function uploadTorrent() {
+    var fileInput = document.getElementById('torrent_file_input');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        showGlobalToast('请选择种子文件', 'error');
+        return;
+    }
+    var btn = document.getElementById('btn_upload_torrent');
+    btn.disabled = true;
+
+    var formData = new FormData();
+    formData.append('torrent_file', fileInput.files[0]);
+
+    var url = document.getElementById('torrent_url_input').value.trim();
+    var title = document.getElementById('torrent_title_input').value.trim();
+    if (url) formData.append('url', url);
+    if (title) formData.append('title', title);
+
+    fetch('/api/download/upload-torrent', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        if (data.error) {
+            showGlobalToast(data.error, 'error');
+            return;
+        }
+        document.getElementById('task_list').style.display = '';
+        fileInput.value = '';
+        document.getElementById('torrent_url_input').value = '';
+        document.getElementById('torrent_title_input').value = '';
+        showGlobalToast('已添加种子', 'success');
+        startPoll();
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        showGlobalToast('上传失败: ' + err.message, 'error');
+    });
+}
+
+function startPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    if (progressTimer) clearInterval(progressTimer);
+    updateTasks();
+    pollTimer = setInterval(updateTasks, 5000);
+    progressTimer = setInterval(updateProgress, 3000);
+}
+
+function nfoPasteFromClipboard() {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(function(text) {
+            document.getElementById('nfo_textarea').value = text;
+            document.getElementById('nfo_status').textContent = '已从剪贴板粘贴';
+            document.getElementById('nfo_status').style.color = 'var(--success)';
+        }).catch(function(err) {
+            document.getElementById('nfo_status').textContent = '无法读取剪贴板，请手动粘贴';
+            document.getElementById('nfo_status').style.color = 'var(--accent)';
+        });
+    } else {
+        document.getElementById('nfo_status').textContent = '浏览器不支持剪贴板读取，请手动粘贴';
+        document.getElementById('nfo_status').style.color = 'var(--accent)';
+    }
+}
+
+function createComicFromNfo() {
+    var text = document.getElementById('nfo_textarea').value.trim();
+    var statusEl = document.getElementById('nfo_status');
+    if (!text) {
+        statusEl.textContent = '请先粘贴 JSON 数据';
+        statusEl.style.color = 'var(--accent)';
+        return;
+    }
+    var data;
+    try {
+        data = JSON.parse(text);
+        if (typeof data !== 'object' || data === null) throw new Error('Not an object');
+    } catch(e) {
+        statusEl.textContent = '内容不是有效的 JSON 格式';
+        statusEl.style.color = 'var(--accent)';
+        return;
+    }
+    if (!data.source_url) {
+        statusEl.textContent = 'JSON 中缺少 source_url 字段';
+        statusEl.style.color = 'var(--accent)';
+        return;
+    }
+    var btn = document.getElementById('btn_nfo_create');
+    btn.disabled = true;
+    statusEl.textContent = '正在添加到队列...';
+    statusEl.style.color = 'var(--text-muted)';
+
+    fetch('/api/v1/downloads/nfo', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        btn.disabled = false;
+        if (resp.code === 0) {
+            statusEl.textContent = '已添加到下载队列！';
+            statusEl.style.color = 'var(--success)';
+            showGlobalToast('NFO 任务已添加到队列', 'success');
+            document.getElementById('task_list').style.display = 'block';
+            updateTasks();
+            document.getElementById('nfo_textarea').value = '';
+        } else {
+            statusEl.textContent = '添加失败: ' + (resp.message || '未知错误');
+            statusEl.style.color = 'var(--accent)';
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        statusEl.textContent = '请求失败: ' + err.message;
+        statusEl.style.color = 'var(--accent)';
+    });
+}
+
+function deleteTask(taskId) {
+    if (!confirm('确定删除此任务？')) return;
+    fetch('/api/download/' + taskId + '/delete', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function() { updateTasks(); })
+    .catch(function() { updateTasks(); });
+}
+
+function updateTasks() {
+    fetch('/api/download/tasks')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var hasAny = (data.waiting && data.waiting.length > 0) ||
+                     (data.downloading && data.downloading.length > 0) ||
+                     (data.done && data.done.length > 0);
+        if (hasAny) {
+            document.getElementById('task_list').style.display = '';
+        }
+
+        var waitingHtml = '';
+        var waitingCount = 0;
+        if (data.waiting && data.waiting.length > 0) {
+            waitingCount = data.waiting.length;
+            for (var i = 0; i < data.waiting.length; i++) {
+                waitingHtml += buildTaskHtml(data.waiting[i], 'waiting');
+            }
+        }
+        document.getElementById('waiting_tasks').innerHTML = waitingHtml;
+        document.getElementById('waiting_count').textContent = waitingCount;
+        document.getElementById('waiting_empty').style.display = waitingCount === 0 ? '' : 'none';
+
+        var downloadingHtml = '';
+        var downloadingCount = 0;
+        if (data.downloading && data.downloading.length > 0) {
+            downloadingCount = data.downloading.length;
+            for (var i = 0; i < data.downloading.length; i++) {
+                downloadingHtml += buildTaskHtml(data.downloading[i], 'downloading');
+            }
+        }
+        document.getElementById('downloading_tasks').innerHTML = downloadingHtml;
+        document.getElementById('downloading_count').textContent = downloadingCount;
+        document.getElementById('downloading_empty').style.display = downloadingCount === 0 ? '' : 'none';
+
+        var doneHtml = '';
+        var doneCount = 0;
+        if (data.done && data.done.length > 0) {
+            doneCount = data.done.length;
+            for (var i = 0; i < data.done.length; i++) {
+                doneHtml += buildTaskHtml(data.done[i], 'done');
+            }
+        }
+        document.getElementById('done_tasks').innerHTML = doneHtml;
+        document.getElementById('done_count').textContent = doneCount;
+    })
+    .catch(function() {});
+}
+
+function updateProgress() {
+    fetch('/api/download/progress')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.tasks && data.tasks.length > 0) {
+            for (var i = 0; i < data.tasks.length; i++) {
+                var t = data.tasks[i];
+                var bar = document.getElementById('progress-bar-' + t.id);
+                var text = document.getElementById('progress-text-' + t.id);
+                var stateEl = document.getElementById('qb-state-' + t.id);
+                if (bar) {
+                    bar.style.width = t.qb_progress + '%';
+                    if (t.qb_progress >= 100) {
+                        bar.className = 'progress-bar bg-success';
+                    } else if (t.qb_progress > 0) {
+                        bar.style.backgroundColor = 'var(--accent)';
+                    }
+                }
+                if (text) {
+                    text.textContent = t.qb_progress.toFixed(1) + '%';
+                }
+                if (stateEl) {
+                    stateEl.textContent = formatState(t.qb_state);
+                }
+                var statusEl = document.getElementById('status-' + t.id);
+                var msgEl = document.getElementById('message-' + t.id);
+                if (t.status === 'done' && statusEl) {
+                    statusEl.innerHTML = '<span style="color:var(--success)"><i class="bi bi-check-circle-fill"></i> 完成</span>';
+                    if (msgEl) msgEl.textContent = t.message;
+                } else if (t.status === 'error' && statusEl) {
+                    statusEl.innerHTML = '<span style="color:var(--accent)"><i class="bi bi-x-circle-fill"></i> 失败</span>';
+                    if (msgEl) msgEl.textContent = t.message;
+                }
+            }
+        }
+    })
+    .catch(function() {});
+}
+
+function formatState(state) {
+    var map = {
+        'downloading': '下载中',
+        'stalledDL': '等待下载',
+        'uploading': '做种中',
+        'stalledUP': '等待做种',
+        'queuedDL': '排队下载',
+        'queuedUP': '排队做种',
+        'pausedDL': '已暂停',
+        'pausedUP': '暂停做种',
+        'checkingDL': '校验中',
+        'checkingUP': '校验做种',
+        'error': '错误',
+        'missingFiles': '文件缺失',
+        'not_found': '未找到种子',
+        'forcedDL': '强制下载',
+        'forcedUP': '强制做种',
+        'metaDL': '获取元数据',
+    };
+    return map[state] || state;
+}
+
+function buildTaskHtml(t, section) {
+    var statusColor = 'var(--text-muted)';
+    var statusIcon = 'bi-hourglass-split';
+    var statusText = '等待中';
+    if (t.status === 'pending') { statusColor = 'var(--text-muted)'; statusIcon = 'bi-hourglass-split'; statusText = '等待中'; }
+    else if (t.status === 'scraping') { statusColor = 'var(--warning)'; statusIcon = 'bi-search'; statusText = '采集中'; }
+    else if (t.status === 'saving_nfo') { statusColor = '#17a2b8'; statusIcon = 'bi-file-earmark-code'; statusText = '保存NFO'; }
+    else if (t.status === 'adding_torrent') { statusColor = '#6f42c1'; statusIcon = 'bi-magnet'; statusText = '添加种子'; }
+    else if (t.status === 'matching') { statusColor = '#e83e8c'; statusIcon = 'bi-search'; statusText = '等待匹配'; }
+    else if (t.status === 'downloading') { statusColor = '#0d6efd'; statusIcon = 'bi-arrow-down-circle'; statusText = '下载中'; }
+    else if (t.status === 'importing') { statusColor = '#fd7e14'; statusIcon = 'bi-box-arrow-in-down'; statusText = '导入中'; }
+    else if (t.status === 'done') { statusColor = 'var(--success)'; statusIcon = 'bi-check-circle-fill'; statusText = '完成'; }
+    else if (t.status === 'error') { statusColor = 'var(--accent)'; statusIcon = 'bi-x-circle-fill'; statusText = '失败'; }
+
+    var html = '<div class="card mb-2" style="border-left: 3px solid ' + statusColor + ';">';
+    html += '<div class="card-body py-2 px-3">';
+    html += '<div class="d-flex justify-content-between align-items-center">';
+    html += '<div>';
+    html += '<span id="status-' + t.id + '" style="color:' + statusColor + '"><i class="bi ' + statusIcon + '"></i> ' + statusText + '</span>';
+    html += ' <span style="color:var(--text-primary);font-weight:bold;">' + (t.title || t.url || '') + '</span>';
+    if (t.torrent_file) {
+        html += ' <span style="color:#6f42c1;font-size:0.8rem;"><i class="bi bi-file-earmark-arrow-down"></i> 种子文件</span>';
+    }
+    html += '</div>';
+    html += '<div class="d-flex align-items-center gap-2">';
+    html += '<small style="color:var(--text-muted);">' + (t.time || '') + '</small>';
+    var canDelete = t.status !== 'scraping' && t.status !== 'saving_nfo' && t.status !== 'adding_torrent';
+    if (canDelete) {
+        html += '<button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="deleteTask(\'' + t.id + '\')" title="删除"><i class="bi bi-trash3" style="font-size:0.75rem;"></i></button>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    if (t.message) {
+        html += '<div id="message-' + t.id + '" style="color:var(--text-secondary);font-size:0.85rem;margin-top:4px;">' + t.message + '</div>';
+    }
+
+    if (t.status === 'downloading') {
+        html += '<div style="margin-top:8px;">';
+        html += '<div class="d-flex justify-content-between align-items-center mb-1">';
+        html += '<span style="color:var(--text-secondary);font-size:0.8rem;">' + formatState(t.qb_state) + (t.qb_state === 'not_found' ? ' (等待匹配中...)' : '') + '</span>';
+        html += '<span id="progress-text-' + t.id + '" style="color:var(--text-primary);font-size:0.85rem;font-weight:bold;">' + t.qb_progress.toFixed(1) + '%</span>';
+        html += '</div>';
+        html += '<div class="progress" style="height:8px;background:var(--bg-tertiary);">';
+        var barStyle = t.qb_progress >= 100 ? 'bg-success' : '';
+        var barBg = t.qb_progress < 100 ? 'background-color:var(--accent);' : '';
+        html += '<div id="progress-bar-' + t.id + '" class="progress-bar ' + barStyle + '" role="progressbar" style="width:' + t.qb_progress + '%;' + barBg + 'transition:width 0.5s ease;"></div>';
+        html += '</div>';
+        html += '</div>';
+    } else if (t.status === 'done') {
+        if (t.comic_id) {
+            html += '<div style="margin-top:6px;">';
+            html += '<a href="/comic/' + t.comic_id + '" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:0.8rem;"><i class="bi bi-book"></i> 查看漫画</a>';
+            html += '</div>';
+        }
+    }
+
+    if (t.torrent_urls && t.torrent_urls.length > 0) {
+        html += '<div style="margin-top:4px;">';
+        for (var j = 0; j < t.torrent_urls.length; j++) {
+            html += '<a href="' + t.torrent_urls[j] + '" target="_blank" class="info-link" style="font-size:0.8rem;word-break:break-all;">' + t.torrent_urls[j].substring(0, 80) + '</a> ';
+        }
+        html += '</div>';
+    }
+    html += '</div></div>';
+    return html;
+}
+
+updateTasks();
+</script>
+{% endblock %}

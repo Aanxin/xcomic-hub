@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+{% block title %}上传漫画{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="page-header">
+            <h2 class="gradient-text">上传漫画</h2>
+            <p>上传漫画文件、NFO 元数据和封面图片</p>
+        </div>
+
+        <div id="uploadForm">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-file-earmark-zip"></i> 漫画文件</h5>
+                    <div class="mb-3">
+                        <label for="comic_files" class="form-label">选择漫画文件（支持多选，可一次选择20、50本）</label>
+                        <input class="form-control" type="file" id="comic_files" name="comic_files" required multiple
+                               accept=".cbz,.cbr,.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp,.gif">
+                        <div class="form-text">支持格式：CBZ, CBR, ZIP, RAR, 7Z, PDF, JPG, PNG, WEBP, GIF · 大文件自动分片上传，支持断点续传</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="comic_folder" class="form-label">或者选择漫画文件夹（将自动压缩为ZIP上传）</label>
+                        <input class="form-control" type="file" id="comic_folder" name="comic_folder" webkitdirectory directory multiple>
+                        <div class="form-text">选择文件夹后，每个子文件夹会被压缩为一个ZIP文件上传</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-file-earmark-code"></i> NFO 元数据（可选）</h5>
+                    <div class="mb-3">
+                        <label for="nfo_files" class="form-label">选择 .nfo 文件（支持多选）</label>
+                        <input class="form-control" type="file" id="nfo_files" name="nfo_files" multiple accept=".nfo">
+                        <div class="form-text">文件名与漫画同名时自动匹配</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-image"></i> 封面图片（可选）</h5>
+                    <div class="mb-3">
+                        <label for="cover_files" class="form-label">选择封面图片（支持多选）</label>
+                        <input class="form-control" type="file" id="cover_files" name="cover_files" multiple
+                               accept=".jpg,.jpeg,.png,.webp,.gif">
+                        <div class="form-text">文件名与漫画同名时自动匹配</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3"><i class="bi bi-pencil"></i> 手动信息（可选，应用于所有漫画）</h5>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="title" class="form-label">标题</label>
+                            <input type="text" class="form-control" id="title" name="title" placeholder="留空则使用文件名">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="author" class="form-label">作者</label>
+                            <input type="text" class="form-control" id="author" name="author" placeholder="作者名">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="volume" class="form-label">卷号</label>
+                            <input type="text" class="form-control" id="volume" name="volume" placeholder="如：第1话、Vol.1">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="collection_name" class="form-label">合集名称</label>
+                            <input type="text" class="form-control" id="collection_name" name="collection_name" placeholder="如：进击的巨人、海贼王">
+                            <div class="form-text">填写后漫画将归入同一合集，文件存入同名子文件夹</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-grid">
+                <button type="button" class="btn btn-manhua btn-lg" id="submitBtn" onclick="startUpload()">
+                    <i class="bi bi-upload"></i> 开始上传
+                </button>
+            </div>
+        </div>
+
+        <div id="progressSection" style="display:none;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 style="color: var(--accent); margin:0;"><i class="bi bi-list-check"></i> 上传队列</h5>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-light btn-sm" id="pauseAllBtn" onclick="pauseAll()">
+                        <i class="bi bi-pause-circle"></i> 全部暂停
+                    </button>
+                    <button class="btn btn-outline-light btn-sm" id="resumeAllBtn" onclick="resumeAll()" style="display:none;">
+                        <i class="bi bi-play-circle"></i> 全部继续
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="cancelAll()">
+                        <i class="bi bi-x-circle"></i> 全部取消
+                    </button>
+                </div>
+            </div>
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <small style="color: var(--text-secondary);" id="overallText">总进度</small>
+                    <small style="color: var(--accent);" id="overallPercent">0%</small>
+                </div>
+                <div class="progress" style="height: 8px; background-color: var(--bg-tertiary);">
+                    <div id="overallBar" class="progress-bar" style="width: 0%; background-color: var(--accent);"></div>
+                </div>
+            </div>
+            <div id="fileList"></div>
+            <div id="completedActions" class="mt-3" style="display:none;">
+                <a href="{{ url_for('main.index') }}" class="btn btn-manhua">
+                    <i class="bi bi-grid"></i> 查看漫画库
+                </a>
+                <button type="button" class="btn btn-outline-light ms-2" onclick="resetForm()">
+                    <i class="bi bi-plus-circle"></i> 继续上传
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+const CHUNK_SIZE = 5 * 1024 * 1024;
+const UPLOAD_INTERVAL = parseFloat('{{ upload_interval }}') * 1000;
+let uploadQueue = [];
+let nfoMap = {};
+let coverMap = {};
+let isUploading = false;
+let globalPaused = false;
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function getStatusLabel(status) {
+    const map = {
+        'pending': '等待中',
+        'uploading': '上传中',
+        'paused': '已暂停',
+        'assembling': '组装中',
+        'completed': '已完成',
+        'failed': '失败',
+        'cancelled': '已取消',
+        'duplicate': '已跳过'
+    };
+    return map[status] || status;
+}
+
+function getStatusColor(status) {
+    const map = {
+        'pending': 'var(--text-secondary)',
+        'uploading': '#0d6efd',
+        'paused': 'var(--warning)',
+        'assembling': '#0dcaf0',
+        'completed': 'var(--success)',
+        'failed': 'var(--accent)',
+        'cancelled': '#6c757d',
+        'duplicate': '#fd7e14'
+    };
+    return map[status] || 'var(--text-secondary)';
+}
+
+function renderFileList() {
+    const container = document.getElementById('fileList');
+    uploadQueue.forEach((item, idx) => {
+        const cardId = `upload-card-${idx}`;
+        let card = document.getElementById(cardId);
+        if (!card || card.dataset.status !== item.status) {
+            if (card) card.remove();
+            card = createFileCard(item, idx, cardId);
+            const nextCard = document.getElementById(`upload-card-${idx + 1}`);
+            if (nextCard) {
+                container.insertBefore(card, nextCard);
+            } else {
+                container.appendChild(card);
+            }
+        } else {
+            updateFileCard(card, item);
+        }
+    });
+    while (container.children.length > uploadQueue.length) {
+        container.removeChild(container.lastChild);
+    }
+    updateOverallProgress();
+}
+
+function createFileCard(item, idx, cardId) {
+    const color = getStatusColor(item.status);
+    const pct = item.progress || 0;
+    const isCompleted = item.status === 'completed';
+    const isFailed = item.status === 'failed';
+    const isCancelled = item.status === 'cancelled';
+    const isPaused = item.status === 'paused';
+    const isDuplicate = item.status === 'duplicate';
+    const isUploadingItem = item.status === 'uploading';
+    const isAssembling = item.status === 'assembling';
+
+    let actions = '';
+    if (isUploadingItem) {
+        actions = `<button class="btn btn-outline-warning btn-sm" onclick="pauseFile(${idx})"><i class="bi bi-pause-fill"></i></button>`;
+    } else if (isPaused) {
+        actions = `<button class="btn btn-outline-success btn-sm" onclick="resumeFile(${idx})"><i class="bi bi-play-fill"></i></button>`;
+    }
+    if (!isCompleted && !isCancelled && !isDuplicate) {
+        actions += ` <button class="btn btn-outline-danger btn-sm" onclick="cancelFile(${idx})"><i class="bi bi-x-lg"></i></button>`;
+    }
+
+    let errorHtml = '';
+    if (isFailed && item.error) {
+        errorHtml = `<div class="card-error" style="color: var(--accent); font-size: 0.8rem; margin-top: 4px;"><i class="bi bi-exclamation-triangle"></i> ${item.error}</div>`;
+    }
+    if (isDuplicate && item.error) {
+        errorHtml = `<div class="card-error" style="color: #fd7e14; font-size: 0.8rem; margin-top: 4px;"><i class="bi bi-exclamation-diamond"></i> ${item.error}</div>`;
+    }
+
+    let retryHtml = '';
+    if (isFailed) {
+        retryHtml = ` <button class="btn btn-outline-info btn-sm" onclick="retryFile(${idx})"><i class="bi bi-arrow-clockwise"></i> 重试</button>`;
+    }
+
+    const iconClass = isCompleted ? 'bi-check-circle-fill' : isFailed ? 'bi-x-circle-fill' : isDuplicate ? 'bi-slash-circle-fill' : isPaused ? 'bi-pause-circle-fill' : isAssembling ? 'bi-gear-fill spin-icon' : 'bi-arrow-up-circle-fill';
+
+    const card = document.createElement('div');
+    card.className = 'card mb-2';
+    card.id = cardId;
+    card.dataset.status = item.status;
+    card.innerHTML = `
+        <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <div class="d-flex align-items-center gap-2" style="flex:1; min-width:0;">
+                    <span class="card-icon" style="color:${color}; font-size:0.85rem; white-space:nowrap;">
+                        <i class="bi ${iconClass}"></i>
+                    </span>
+                    <span style="color:var(--text-primary); font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.filename}</span>
+                    <span style="color:var(--text-muted); font-size:0.8rem; white-space:nowrap;">${formatSize(item.fileSize)}</span>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <span class="card-status" style="color:${color}; font-size:0.8rem; white-space:nowrap;">${getStatusLabel(item.status)} ${pct}%</span>
+                    ${actions}${retryHtml}
+                </div>
+            </div>
+            <div class="progress" style="height: 4px; background-color: var(--bg-tertiary);">
+                <div class="progress-bar card-progress" style="width: ${pct}%; background-color: ${color};"></div>
+            </div>
+            ${errorHtml}
+        </div>
+    `;
+    return card;
+}
+
+function updateFileCard(card, item) {
+    const pct = item.progress || 0;
+    const color = getStatusColor(item.status);
+    const progressBar = card.querySelector('.card-progress');
+    if (progressBar) {
+        progressBar.style.width = pct + '%';
+        progressBar.style.backgroundColor = color;
+    }
+    const statusSpan = card.querySelector('.card-status');
+    if (statusSpan) {
+        statusSpan.style.color = color;
+        statusSpan.textContent = `${getStatusLabel(item.status)} ${pct}%`;
+    }
+}
+
+function updateOverallProgress() {
+    let totalProgress = 0;
+    const totalItems = uploadQueue.length;
+    uploadQueue.forEach(item => { totalProgress += (item.progress || 0); });
+
+    const overallPct = totalItems > 0 ? Math.round(totalProgress / totalItems) : 0;
+    document.getElementById('overallBar').style.width = overallPct + '%';
+    document.getElementById('overallPercent').textContent = overallPct + '%';
+
+    const completedCount = uploadQueue.filter(i => i.status === 'completed').length;
+    const failedCount = uploadQueue.filter(i => i.status === 'failed').length;
+    const duplicateCount = uploadQueue.filter(i => i.status === 'duplicate').length;
+    const activeCount = uploadQueue.filter(i => !['completed', 'failed', 'cancelled', 'duplicate'].includes(i.status)).length;
+    let overallText = `总进度 ${completedCount}/${totalItems} 完成`;
+    if (duplicateCount > 0) overallText += `，${duplicateCount} 跳过`;
+    if (failedCount > 0) overallText += `，${failedCount} 失败`;
+    document.getElementById('overallText').textContent = overallText;
+
+    const allDone = activeCount === 0 && uploadQueue.length > 0;
+    document.getElementById('completedActions').style.display = allDone ? 'block' : 'none';
+    document.getElementById('pauseAllBtn').style.display = activeCount > 0 && !globalPaused ? 'inline-block' : 'none';
+    document.getElementById('resumeAllBtn').style.display = globalPaused && activeCount > 0 ? 'inline-block' : 'none';
+}
+
+async function uploadNfoFiles() {
+    const nfoInput = document.getElementById('nfo_files');
+    nfoMap = {};
+    if (!nfoInput.files.length) return;
+
+    for (const f of nfoInput.files) {
+        const formData = new FormData();
+        formData.append('nfo_file', f);
+        try {
+            const resp = await fetch('/api/chunked-upload/nfo-files', {method: 'POST', body: formData});
+            const data = await resp.json();
+            if (!data.error) {
+                const base = f.name.replace(/\.nfo$/i, '');
+                nfoMap[base] = data.nfo_filename;
+            }
+        } catch(e) {}
+    }
+}
+
+async function uploadCoverFiles() {
+    const coverInput = document.getElementById('cover_files');
+    coverMap = {};
+    if (!coverInput.files.length) return;
+
+    for (const f of coverInput.files) {
+        const formData = new FormData();
+        formData.append('cover_file', f);
+        try {
+            const resp = await fetch('/api/chunked-upload/cover-files', {method: 'POST', body: formData});
+            const data = await resp.json();
+            if (!data.error) {
+                const base = f.name.replace(/\.[^.]+$/, '');
+                coverMap[base] = data.cover_filename;
+            }
+        } catch(e) {}
+    }
+}
+
+async function startUpload() {
+    const comicInput = document.getElementById('comic_files');
+    const folderInput = document.getElementById('comic_folder');
+
+    if (!comicInput.files.length && !folderInput.files.length) {
+        showGlobalToast('请选择至少一个漫画文件或文件夹', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>准备中...';
+
+    await uploadNfoFiles();
+    await uploadCoverFiles();
+
+    const manualTitle = document.getElementById('title').value.trim();
+    const manualAuthor = document.getElementById('author').value.trim();
+    const collectionName = document.getElementById('collection_name').value.trim();
+    const volume = document.getElementById('volume').value.trim();
+
+    uploadQueue = [];
+
+    for (const f of comicInput.files) {
+        const base = f.name.replace(/\.[^.]+$/, '');
+        uploadQueue.push({
+            file: f,
+            filename: f.name,
+            fileSize: f.size,
+            status: 'pending',
+            progress: 0,
+            uploadId: null,
+            totalChunks: Math.ceil(f.size / CHUNK_SIZE) || 1,
+            uploadedChunks: [],
+            error: '',
+            nfoFilename: nfoMap[base] || '',
+            coverFilename: coverMap[base] || '',
+            manualTitle: manualTitle,
+            manualAuthor: manualAuthor,
+            collectionName: collectionName,
+            volume: volume,
+            abortController: null,
+        });
+    }
+
+    if (folderInput.files.length > 0) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>压缩文件夹中...';
+        const folderMap = {};
+        for (const f of folderInput.files) {
+            const parts = f.webkitRelativePath.split('/');
+            const folderName = parts[0];
+            if (!folderMap[folderName]) {
+                folderMap[folderName] = [];
+            }
+            folderMap[folderName].push(f);
+        }
+        for (const [folderName, files] of Object.entries(folderMap)) {
+            try {
+                const zipBlob = await createZipFromFiles(files);
+                const zipFile = new File([zipBlob], folderName + '.zip', {type: 'application/zip'});
+                const base = zipFile.name.replace(/\.[^.]+$/, '');
+                uploadQueue.push({
+                    file: zipFile,
+                    filename: zipFile.name,
+                    fileSize: zipFile.size,
+                    status: 'pending',
+                    progress: 0,
+                    uploadId: null,
+                    totalChunks: Math.ceil(zipFile.size / CHUNK_SIZE) || 1,
+                    uploadedChunks: [],
+                    error: '',
+                    nfoFilename: nfoMap[base] || '',
+                    coverFilename: coverMap[base] || '',
+                    manualTitle: manualTitle,
+                    manualAuthor: manualAuthor,
+                    collectionName: collectionName,
+                    volume: volume,
+                    abortController: null,
+                });
+            } catch(e) {
+                console.error('压缩文件夹失败:', folderName, e);
+            }
+        }
+    }
+
+    if (uploadQueue.length === 0) {
+        showGlobalToast('没有可上传的文件', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-upload"></i> 开始上传';
+        return;
+    }
+
+    document.getElementById('uploadForm').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'block';
+    renderFileList();
+
+    isUploading = true;
+    globalPaused = false;
+    processQueue();
+}
+
+async function createZipFromFiles(files) {
+    const zip = new JSZip();
+    for (const f of files) {
+        const path = f.webkitRelativePath.split('/').slice(1).join('/');
+        if (!path) continue;
+        const ext = path.split('.').pop().toLowerCase();
+        if (['.ds_store', 'thumbs.db', 'desktop.ini'].includes(path.toLowerCase())) continue;
+        if (path.startsWith('__MACOSX')) continue;
+        zip.file(path, f);
+    }
+    return await zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 1}});
+}
+
+async function processQueue() {
+    while (isUploading) {
+        const nextIdx = uploadQueue.findIndex(i => i.status === 'pending');
+        if (nextIdx === -1) {
+            const stillActive = uploadQueue.some(i =>
+                ['uploading', 'paused', 'assembling'].includes(i.status));
+            if (!stillActive) {
+                isUploading = false;
+                renderFileList();
+                return;
+            }
+            await new Promise(r => setTimeout(r, 500));
+            continue;
+        }
+
+        await uploadFileChunks(nextIdx);
+
+        if (UPLOAD_INTERVAL > 0 && isUploading) {
+            await new Promise(r => setTimeout(r, UPLOAD_INTERVAL));
+        }
+    }
+}
+
+async function uploadFileChunks(idx) {
+    const item = uploadQueue[idx];
+    if (!item || !item.file) return;
+
+    try {
+        const initResp = await fetch('/api/chunked-upload/init', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                filename: item.filename,
+                file_size: item.fileSize,
+                chunk_size: CHUNK_SIZE,
+                nfo_filename: item.nfoFilename,
+                cover_filename: item.coverFilename,
+                manual_title: item.manualTitle,
+                manual_author: item.manualAuthor,
+                collection_name: item.collectionName,
+                volume: item.volume,
+            })
+        });
+        const initData = await initResp.json();
+        if (initData.error) {
+            if (initData.duplicate) {
+                item.status = 'duplicate';
+                item.error = initData.error;
+            } else {
+                item.status = 'failed';
+                item.error = initData.error;
+            }
+            renderFileList();
+            return;
+        }
+
+        item.uploadId = initData.id;
+        item.uploadedChunks = initData.uploaded_chunks || [];
+        item.totalChunks = initData.total_chunks;
+        item.status = 'uploading';
+        item.progress = initData.progress || 0;
+        renderFileList();
+
+        item.abortController = new AbortController();
+
+        for (let i = 0; i < item.totalChunks; i++) {
+            if (item.status === 'paused' || item.status === 'cancelled') break;
+
+            while (globalPaused && item.status === 'uploading') {
+                await new Promise(r => setTimeout(r, 300));
+            }
+            if (item.status === 'paused' || item.status === 'cancelled') break;
+
+            if (item.uploadedChunks.includes(i)) {
+                item.progress = Math.round(((i + 1) / item.totalChunks) * 100);
+                renderFileList();
+                continue;
+            }
+
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, item.fileSize);
+            const chunkBlob = item.file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append('upload_id', item.uploadId);
+            formData.append('chunk_index', i);
+            formData.append('chunk', chunkBlob);
+
+            try {
+                const chunkResp = await fetch('/api/chunked-upload/chunk', {
+                    method: 'POST',
+                    body: formData,
+                    signal: item.abortController.signal,
+                });
+                const chunkData = await chunkResp.json();
+                if (chunkData.error) {
+                    item.status = 'failed';
+                    item.error = chunkData.error;
+                    renderFileList();
+                    return;
+                }
+                item.uploadedChunks = chunkData.uploaded_chunks || [];
+                item.progress = chunkData.progress || Math.round(((i + 1) / item.totalChunks) * 100);
+                renderFileList();
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                item.status = 'failed';
+                item.error = '网络错误：' + e.message;
+                renderFileList();
+                return;
+            }
+        }
+
+        if (item.status === 'uploading' && item.uploadedChunks.length >= item.totalChunks) {
+            item.status = 'assembling';
+            item.progress = 100;
+            renderFileList();
+
+            const completeResp = await fetch('/api/chunked-upload/complete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({upload_id: item.uploadId})
+            });
+            const completeData = await completeResp.json();
+            if (completeData.error) {
+                item.status = 'failed';
+                item.error = completeData.error;
+                renderFileList();
+                return;
+            }
+
+            pollAssemblyStatus(idx);
+        }
+    } catch (e) {
+        item.status = 'failed';
+        item.error = e.message;
+        renderFileList();
+    }
+}
+
+function pollAssemblyStatus(idx) {
+    const item = uploadQueue[idx];
+    if (!item || !item.uploadId) return;
+
+    const poll = () => {
+        fetch('/api/chunked-upload/status/' + item.uploadId)
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    item.status = 'completed';
+                    item.progress = 100;
+                    renderFileList();
+                    showGlobalToast(item.filename + ' 上传完成', 'success');
+                } else if (data.status === 'failed') {
+                    item.status = 'failed';
+                    item.error = data.error || '组装失败';
+                    renderFileList();
+                } else {
+                    setTimeout(poll, 1000);
+                }
+            })
+            .catch(() => {
+                setTimeout(poll, 2000);
+            });
+    };
+    setTimeout(poll, 500);
+}
+
+function pauseFile(idx) {
+    const item = uploadQueue[idx];
+    if (!item || item.status !== 'uploading') return;
+    item.status = 'paused';
+    if (item.abortController) {
+        item.abortController.abort();
+    }
+    fetch('/api/chunked-upload/pause', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({upload_id: item.uploadId})
+    }).catch(() => {});
+    renderFileList();
+}
+
+async function resumeFile(idx) {
+    const item = uploadQueue[idx];
+    if (!item || item.status !== 'paused') return;
+    item.status = 'pending';
+    item.abortController = null;
+    renderFileList();
+}
+
+function cancelFile(idx) {
+    const item = uploadQueue[idx];
+    if (!item) return;
+    if (item.abortController) {
+        item.abortController.abort();
+    }
+    item.status = 'cancelled';
+    renderFileList();
+    if (item.uploadId) {
+        fetch('/api/chunked-upload/cancel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upload_id: item.uploadId})
+        }).catch(() => {});
+    }
+}
+
+function retryFile(idx) {
+    const item = uploadQueue[idx];
+    if (!item) return;
+    item.status = 'pending';
+    item.progress = 0;
+    item.uploadId = null;
+    item.uploadedChunks = [];
+    item.error = '';
+    item.abortController = null;
+    renderFileList();
+}
+
+function pauseAll() {
+    globalPaused = true;
+    uploadQueue.forEach((item, idx) => {
+        if (item.status === 'uploading') {
+            pauseFile(idx);
+        }
+    });
+    renderFileList();
+}
+
+function resumeAll() {
+    globalPaused = false;
+    uploadQueue.forEach((item, idx) => {
+        if (item.status === 'paused') {
+            item.status = 'pending';
+            item.abortController = null;
+        }
+    });
+    renderFileList();
+}
+
+function cancelAll() {
+    if (!confirm('确定取消所有上传？')) return;
+    isUploading = false;
+    uploadQueue.forEach((item, idx) => {
+        if (!['completed', 'failed', 'cancelled'].includes(item.status)) {
+            cancelFile(idx);
+        }
+    });
+    renderFileList();
+}
+
+function resetForm() {
+    document.getElementById('uploadForm').style.display = 'block';
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('uploadForm').reset();
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').innerHTML = '<i class="bi bi-upload"></i> 开始上传';
+    uploadQueue = [];
+    nfoMap = {};
+    coverMap = {};
+    isUploading = false;
+    globalPaused = false;
+}
+</script>
+<style>
+.spin-icon {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
