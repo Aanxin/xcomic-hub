@@ -2,6 +2,8 @@ from flask import Blueprint, request, send_from_directory, Response
 from app import db
 from app.models import Comic, Collection, ReadingHistory, Setting
 from app.services.comic_service import ComicService
+from app.services.comic_query_service import ComicQueryService
+from app.services.comic_data_enricher import ComicDataEnricher
 from app.services.nfo_service import NfoService
 from app.reader import get_comic_pages, get_page_dir, is_readable, cleanup_pages
 from app.nfo_parser import generate_nfo
@@ -21,77 +23,21 @@ def list_comics():
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
     sort = request.args.get('sort', 'updated')
+    order = request.args.get('order', '').strip().lower()
     view_filter = request.args.get('filter', '')
     collection_id = request.args.get('collection_id', None, type=int)
 
-    query = Comic.query
-
-    if collection_id is not None:
-        query = query.filter(Comic.collection_id == collection_id)
-    elif view_filter == 'standalone':
-        query = query.filter(Comic.collection_id.is_(None))
-
-    if search:
-        if search.startswith('author:'):
-            val = search[7:].strip()
-            originals = reverse_map_tag(val)
-            conditions = [Comic.author.contains(v) for v in originals]
-            query = query.filter(db.or_(*conditions))
-        elif search.startswith('genre:'):
-            val = search[6:].strip()
-            originals = reverse_map_tag(val)
-            conditions = [Comic.genre.contains(v) for v in originals]
-            query = query.filter(db.or_(*conditions))
-        elif search.startswith('tag:'):
-            val = search[4:].strip()
-            originals = reverse_map_tag(val)
-            conditions = [Comic.tags.contains(v) for v in originals]
-            query = query.filter(db.or_(*conditions))
-        elif search.startswith('category:'):
-            val = search[9:].strip()
-            query = query.filter(Comic.category.contains(val))
-        elif search.startswith('publisher:'):
-            val = search[10:].strip()
-            query = query.filter(Comic.publisher.contains(val))
-        elif search.startswith('language:'):
-            val = search[9:].strip()
-            query = query.filter(Comic.language.contains(val))
-        else:
-            originals = reverse_map_tag(search)
-            tag_conditions = [Comic.tags.contains(v) for v in originals]
-            query = query.filter(
-                db.or_(
-                    Comic.title.contains(search),
-                    Comic.author.contains(search),
-                    *tag_conditions,
-                    Comic.genre.contains(search),
-                )
-            )
-
-    if view_filter == 'favorite':
-        query = query.filter(Comic.is_favorite == True)
-
-    sort_map = {
-        'updated': Comic.updated_at.desc(),
-        'created': Comic.created_at.desc(),
-        'title': Comic.title.asc(),
-        'rating': Comic.rating.desc(),
-        'size': Comic.file_size.desc(),
-    }
-    order = sort_map.get(sort, sort_map['updated'])
-    query = query.order_by(order)
+    query = ComicQueryService.build_comic_query(
+        search=search,
+        sort=sort,
+        view_filter=view_filter,
+        collection_id=collection_id,
+        order=order,
+    )
 
     result = paginate_response(query, page, per_page, lambda c: c.to_dict())
 
-    comic_ids = [c.id for c in Comic.query.filter(
-        Comic.id.in_([item['id'] for item in result['items']])
-    ).all()] if result['items'] else []
-    history_map = {}
-    if comic_ids:
-        histories = ReadingHistory.query.filter(ReadingHistory.comic_id.in_(comic_ids)).all()
-        history_map = {h.comic_id: h.to_dict() for h in histories}
-    for item in result['items']:
-        item['reading_history'] = history_map.get(item['id'])
+    ComicDataEnricher.enrich_with_reading_history(result)
 
     return success_response(data=result)
 
