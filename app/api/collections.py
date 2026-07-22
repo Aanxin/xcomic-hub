@@ -1,11 +1,13 @@
 from flask import Blueprint, request, send_from_directory, Response
 from app import db
-from app.models import Collection, Comic, ReadingHistory
+from app.models import Collection, Comic
 from app.services.collection_service import CollectionService
+from app.services.comic_data_enricher import ComicDataEnricher
 from app.services.nfo_service import NfoService
 from app.nfo_parser import generate_nfo
 from app.api.utils import success_response, error_response, ErrorCode, paginate_response
 from app.api.auth import optional_device
+from app.utils.sort_utils import resolve_direction, apply_order
 from config import NFO_DIR
 
 bp = Blueprint('api_collections', __name__, url_prefix='/api/v1/collections')
@@ -18,6 +20,7 @@ def list_collections():
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
     sort = request.args.get('sort', 'updated')
+    order = request.args.get('order', '').strip().lower()
     view_filter = request.args.get('filter', '')
 
     query = Collection.query
@@ -29,12 +32,13 @@ def list_collections():
         query = query.filter(Collection.is_favorite == True)
 
     sort_map = {
-        'updated': Collection.updated_at.desc(),
-        'created': Collection.created_at.desc(),
-        'name': Collection.name.asc(),
+        'updated': (Collection.updated_at, 'desc'),
+        'created': (Collection.created_at, 'desc'),
+        'name':    (Collection.name,       'asc'),
     }
-    order = sort_map.get(sort, sort_map['updated'])
-    query = query.order_by(order)
+    column, default_dir = sort_map.get(sort, sort_map['updated'])
+    direction = resolve_direction(order, default_dir)
+    query = query.order_by(apply_order(column, direction))
 
     result = paginate_response(query, page, per_page, lambda col: col.to_dict())
     return success_response(data=result)
@@ -48,14 +52,7 @@ def get_collection(collection_id):
         return error_response(ErrorCode.NOT_FOUND, '合集不存在')
     data = col.to_dict()
     comics = col.comics.all()
-    comic_ids = [c.id for c in comics]
-    history_map = {}
-    if comic_ids:
-        histories = ReadingHistory.query.filter(ReadingHistory.comic_id.in_(comic_ids)).all()
-        history_map = {h.comic_id: h.to_dict() for h in histories}
-    data['comics'] = [c.to_dict() for c in comics]
-    for comic_data in data['comics']:
-        comic_data['reading_history'] = history_map.get(comic_data['id'])
+    data['comics'] = ComicDataEnricher.enrich_comics_with_history(comics)
     return success_response(data=data)
 
 
@@ -175,14 +172,5 @@ def list_collection_comics(collection_id):
     if not col:
         return error_response(ErrorCode.NOT_FOUND, '合集不存在')
     comics = col.comics.order_by(Comic.volume.asc(), Comic.id.asc()).all()
-    comic_ids = [c.id for c in comics]
-    history_map = {}
-    if comic_ids:
-        histories = ReadingHistory.query.filter(ReadingHistory.comic_id.in_(comic_ids)).all()
-        history_map = {h.comic_id: h.to_dict() for h in histories}
-    result = []
-    for c in comics:
-        d = c.to_dict()
-        d['reading_history'] = history_map.get(c.id)
-        result.append(d)
+    result = ComicDataEnricher.enrich_comics_with_history(comics)
     return success_response(data=result)
