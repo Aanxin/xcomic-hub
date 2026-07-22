@@ -111,3 +111,85 @@ def test_sort_updated_uppercase_order_asc(client, seeded_comics):
     # order is case-insensitive -> ASC behaves as asc.
     resp = client.get("/?sort=updated&order=ASC")
     assert _comic_titles_in_order(resp) == ["Alpha", "Bravo", "Charlie"]
+
+
+# ---------------------------------------------------------------------------
+# Task 5: sort-direction toggle button + order threading + localStorage
+# (rendered-HTML assertions). The route passes order=effective_order to the
+# template, where effective_order is always 'asc' or 'desc'.
+# ---------------------------------------------------------------------------
+
+_ANCHOR_RE = re.compile(r'<a\b([^>]*)>(.*?)</a>', re.DOTALL)
+
+
+def _find_toggle(html):
+    """Return (attrs, inner_html) for the <a> with id="sort-order-toggle".
+
+    Returns (None, None) if the toggle is absent. Attribute order in the
+    opening tag is not guaranteed, so we scan all anchors.
+    """
+    for m in _ANCHOR_RE.finditer(html):
+        attrs, inner = m.group(1), m.group(2)
+        if 'id="sort-order-toggle"' in attrs:
+            return attrs, inner
+    return None, None
+
+
+def _href(attrs):
+    m = re.search(r'href="([^"]*)"', attrs)
+    return m.group(1) if m else None
+
+
+def test_toggle_present_and_flips_desc_to_asc(client, seeded_comics):
+    # sort=updated with no order -> effective desc -> toggle offers asc, icon down.
+    html = client.get("/?sort=updated").data.decode("utf-8")
+    attrs, inner = _find_toggle(html)
+    assert attrs is not None, "sort-order-toggle element missing from rendered HTML"
+    href = _href(attrs)
+    assert href is not None, "sort-order-toggle anchor has no href"
+    assert "order=asc" in href
+    assert "bi-sort-down" in inner
+
+
+def test_toggle_flips_asc_to_desc_and_shows_up_icon(client, seeded_comics):
+    # sort=updated&order=asc -> effective asc -> toggle offers desc, icon up.
+    html = client.get("/?sort=updated&order=asc").data.decode("utf-8")
+    attrs, inner = _find_toggle(html)
+    assert attrs is not None, "sort-order-toggle element missing from rendered HTML"
+    href = _href(attrs)
+    assert href is not None, "sort-order-toggle anchor has no href"
+    assert "order=desc" in href
+    assert "bi-sort-up" in inner
+
+
+def test_toggle_for_title_default_asc(client, seeded_comics):
+    # title default direction is asc -> toggle offers desc, icon up.
+    html = client.get("/?sort=title").data.decode("utf-8")
+    attrs, inner = _find_toggle(html)
+    assert attrs is not None, "sort-order-toggle element missing from rendered HTML"
+    href = _href(attrs)
+    assert href is not None, "sort-order-toggle anchor has no href"
+    assert "order=desc" in href
+    assert "bi-sort-up" in inner
+
+
+def test_sort_dropdown_threads_current_order(client, seeded_comics):
+    # Switching sort field must carry the current order through the dropdown
+    # item hrefs (design 6.1: direction is independent of field).
+    html = client.get("/?sort=updated&order=asc").data.decode("utf-8")
+    title_href = None
+    for m in _ANCHOR_RE.finditer(html):
+        attrs = m.group(1)
+        if 'dropdown-item' in attrs:
+            href = _href(attrs)
+            if href and 'sort=title' in href:
+                title_href = href
+                break
+    assert title_href is not None, "sort=title dropdown item not found in rendered HTML"
+    assert "order=asc" in title_href
+
+
+def test_localstorage_persists_order(client, seeded_comics):
+    # The persistence script must wire library_order alongside library_sort.
+    html = client.get("/?sort=updated&order=asc").data.decode("utf-8")
+    assert "library_order" in html
