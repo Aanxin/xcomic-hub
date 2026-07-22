@@ -27,11 +27,12 @@ def list_history():
     result = paginate_response(query, page, per_page)
 
     enriched_items = []
-    for item_dict in result['items']:
-        comic = Comic.query.get(item_dict.get('comic_id'))
+    for item in result['items']:
+        data = item.to_dict()
+        comic = Comic.query.get(item.comic_id)
         if comic:
-            item_dict['comic'] = comic.to_dict()
-        enriched_items.append(item_dict)
+            data['comic'] = comic.to_dict()
+        enriched_items.append(data)
     result['items'] = enriched_items
 
     return success_response(data=result)

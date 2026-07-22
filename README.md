@@ -137,7 +137,7 @@ xcomic-hub/
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `SECRET_KEY` | manhua-dev-secret-key | Flask 密钥（生产环境请修改） |
+| `SECRET_KEY` | manhua-dev-secret-key | Flask 密钥（可选，生产环境建议修改） |
 | `DOWNLOAD_DIR` | /download | 下载任务目录 |
 | `DATA_DIR` | /app/data | 数据存储目录 |
 | `COMICS_DIR` | /app/data/comics | 漫画文件目录 |

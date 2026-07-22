@@ -116,6 +116,7 @@ def index():
         'created': ((Collection.created_at, 'desc'), (Comic.created_at, 'desc')),
         'title': ((Collection.name, 'asc'), (Comic.title, 'asc')),
         'size': ((Collection.id, 'asc'), (Comic.file_size, 'desc')),
+        'rating': ((Collection.id, 'asc'), (Comic.rating, 'desc')),
     }
     (col_col, col_default), (comic_col, comic_default) = sort_map.get(sort, sort_map['updated'])
     col_dir = resolve_direction(order, col_default)

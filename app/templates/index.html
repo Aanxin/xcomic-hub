@@ -171,7 +171,7 @@
     <div class="dropdown ms-auto">
         <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
             <i class="bi bi-sort-down"></i>
-            {% if sort == 'title' %}按标题{% elif sort == 'created' %}按添加时间{% elif sort == 'size' %}按大小{% else %}按更新时间{% endif %}
+            {% if sort == 'title' %}按标题{% elif sort == 'created' %}按添加时间{% elif sort == 'size' %}按大小{% elif sort == 'rating' %}按评分{% else %}按更新时间{% endif %}
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item {{ 'active' if sort == 'updated' else '' }}"
@@ -182,6 +182,8 @@
                    href="{{ url_for('main.index', sort='title', filter=view_filter, search=search, order=order) }}">按标题</a></li>
             <li><a class="dropdown-item {{ 'active' if sort == 'size' else '' }}"
                    href="{{ url_for('main.index', sort='size', filter=view_filter, search=search, order=order) }}">按大小</a></li>
+            <li><a class="dropdown-item {{ 'active' if sort == 'rating' else '' }}"
+                   href="{{ url_for('main.index', sort='rating', filter=view_filter, search=search, order=order) }}">按评分</a></li>
         </ul>
     </div>
     {% set flipped_order = 'desc' if order == 'asc' else 'asc' %}
@@ -276,18 +278,6 @@
                 {% endif %}
                 {% if comic.genre %}
                 <p class="card-text mb-1 small text-truncate"><i class="bi bi-tag"></i> <a href="{{ url_for('main.index', search='genre:' + (comic.genre|map_tag)) }}" class="info-link">{{ comic.genre|map_tag }}</a></p>
-                {% endif %}
-                {% if comic.rating and not h %}
-                <p class="card-text mb-1">
-                    {% for i in range(5) %}
-                        {% if i < comic.rating|round|int %}
-                        <i class="bi bi-star-fill text-warning"></i>
-                        {% else %}
-                        <i class="bi bi-star text-secondary"></i>
-                        {% endif %}
-                    {% endfor %}
-                    <small class="ms-1">{{ "%.1f"|format(comic.rating) }}</small>
-                </p>
                 {% endif %}
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center">

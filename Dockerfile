@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/data/comics /app/data/covers /app/data/pages /app/data/nfo /app/data/staging /download
+RUN mkdir -p /app/data/comics /app/data/covers /app/data/pages /app/data/nfo /app/data/staging /comics /nfo
 
 EXPOSE 8724
 

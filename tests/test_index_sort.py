@@ -28,18 +28,21 @@ def seeded_comics(make_comic):
     alpha = make_comic(
         title="Alpha",
         file_size=100,
+        rating=2.0,
         created_at=datetime(2024, 1, 1, 0, 0, 0),
         updated_at=datetime(2024, 1, 1, 0, 0, 0),
     )
     bravo = make_comic(
         title="Bravo",
         file_size=200,
+        rating=3.0,
         created_at=datetime(2024, 2, 1, 0, 0, 0),
         updated_at=datetime(2024, 2, 1, 0, 0, 0),
     )
     charlie = make_comic(
         title="Charlie",
         file_size=300,
+        rating=1.0,
         created_at=datetime(2024, 3, 1, 0, 0, 0),
         updated_at=datetime(2024, 3, 1, 0, 0, 0),
     )
@@ -99,6 +102,17 @@ def test_sort_size_no_order_defaults_to_desc(client, seeded_comics):
     # size default direction is desc -> largest (Charlie) first.
     resp = client.get("/?sort=size")
     assert _comic_titles_in_order(resp) == ["Charlie", "Bravo", "Alpha"]
+
+
+def test_sort_rating_no_order_defaults_to_desc(client, seeded_comics):
+    # rating default direction is desc -> highest (Bravo=3.0) first.
+    resp = client.get("/?sort=rating")
+    assert _comic_titles_in_order(resp) == ["Bravo", "Alpha", "Charlie"]
+
+
+def test_sort_rating_order_asc_lowest_first(client, seeded_comics):
+    resp = client.get("/?sort=rating&order=asc")
+    assert _comic_titles_in_order(resp) == ["Charlie", "Alpha", "Bravo"]
 
 
 def test_sort_updated_illegal_order_falls_back_to_desc(client, seeded_comics):

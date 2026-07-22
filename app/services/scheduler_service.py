@@ -1,5 +1,8 @@
+import os
+import shutil
 import threading
 import time as _time
+from datetime import datetime, timedelta
 
 from app import db, create_app
 from app.models import DownloadTask
@@ -10,6 +13,7 @@ class SchedulerService:
     def __init__(self):
         self.scheduler_thread = None
         self.monitor_thread = None
+        self.chunk_cleanup_thread = None
         self.running = False
 
     def start(self):
@@ -20,6 +24,8 @@ class SchedulerService:
         self.scheduler_thread.start()
         self.monitor_thread = threading.Thread(target=self._download_monitor, daemon=True)
         self.monitor_thread.start()
+        self.chunk_cleanup_thread = threading.Thread(target=self._chunk_cleanup_worker, daemon=True)
+        self.chunk_cleanup_thread.start()
 
     def stop(self):
         self.running = False
@@ -44,7 +50,6 @@ class SchedulerService:
                         waiting_count = DownloadTask.query.filter_by(queue='waiting', status='pending').count()
                         print(f'[调度器] 等待队列={waiting_count}, 下一个任务={next_task.id if next_task else "无"}')
                         if next_task:
-                            from datetime import datetime
                             if next_task.url:
                                 new_status = 'scraping'
                                 new_message = '正在采集页面信息...'
@@ -89,3 +94,90 @@ class SchedulerService:
                         DownloadService.update_download_progress()
             except Exception as e:
                 print(f'[下载监控] 更新进度失败: {e}')
+
+    def _chunk_cleanup_worker(self):
+        _time.sleep(30)
+        while self.running:
+            try:
+                app = create_app()
+                with app.app_context():
+                    self._cleanup_stale_chunks()
+            except Exception as e:
+                print(f'[分片清理] 清理失败: {e}')
+                import traceback
+                traceback.print_exc()
+            _time.sleep(600)
+
+    def _cleanup_stale_chunks(self):
+        from config import DATA_DIR
+        from app.models import ChunkedUpload
+
+        chunks_dir = os.path.join(DATA_DIR, 'chunks')
+        if not os.path.exists(chunks_dir):
+            return
+
+        now = datetime.utcnow()
+        stale_active = now - timedelta(hours=2)
+        stale_finished = now - timedelta(hours=24)
+
+        stale_uploads = ChunkedUpload.query.filter(
+            ChunkedUpload.status.in_(['pending', 'uploading', 'paused']),
+            ChunkedUpload.updated_at < stale_active
+        ).all()
+
+        for cu in stale_uploads:
+            chunk_dir = os.path.join(chunks_dir, cu.id)
+            if os.path.exists(chunk_dir):
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+                print(f'[分片清理] 清理中断上传的分片: {cu.id} ({cu.original_filename})')
+            cu.status = 'failed'
+            cu.error = '上传超时，已自动清理'
+            cu.updated_at = now
+
+        db.session.commit()
+
+        finished_uploads = ChunkedUpload.query.filter(
+            ChunkedUpload.status.in_(['completed', 'failed', 'cancelled']),
+            ChunkedUpload.updated_at < stale_finished
+        ).all()
+
+        for cu in finished_uploads:
+            chunk_dir = os.path.join(chunks_dir, cu.id)
+            if os.path.exists(chunk_dir):
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+            db.session.delete(cu)
+
+        if finished_uploads:
+            db.session.commit()
+            print(f'[分片清理] 清理过期上传记录: {len(finished_uploads)} 条')
+
+        db_ids = set()
+        all_uploads = ChunkedUpload.query.all()
+        for cu in all_uploads:
+            db_ids.add(cu.id)
+
+        for name in os.listdir(chunks_dir):
+            entry_path = os.path.join(chunks_dir, name)
+            if not os.path.isdir(entry_path):
+                continue
+            if name.startswith('_'):
+                continue
+            if name not in db_ids:
+                shutil.rmtree(entry_path, ignore_errors=True)
+                print(f'[分片清理] 清理无记录的分片目录: {name}')
+
+        for temp_prefix in ('_nfo_temp', '_cover_temp'):
+            temp_dir = os.path.join(chunks_dir, temp_prefix)
+            if not os.path.exists(temp_dir):
+                continue
+            for name in os.listdir(temp_dir):
+                entry_path = os.path.join(temp_dir, name)
+                if not os.path.isdir(entry_path):
+                    continue
+                try:
+                    mtime = datetime.utcfromtimestamp(os.path.getmtime(entry_path))
+                    if now - mtime > timedelta(hours=24):
+                        shutil.rmtree(entry_path, ignore_errors=True)
+                        print(f'[分片清理] 清理过期临时目录: {temp_prefix}/{name}')
+                except OSError:
+                    pass
