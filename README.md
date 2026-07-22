@@ -64,7 +64,11 @@ docker run -d \
   --name xcomic-hub \
   -p 8724:8724 \
   -v xcomic-data:/app/data \
-  -v xcomic-downloads:/download \
+  -v ./comics:/comics \
+  -v ./nfo:/nfo \
+  -v ./download:/download \
+  -e COMICS_DIR=/comics \
+  -e NFO_DIR=/nfo \
   -e DOWNLOAD_DIR=/download \
   --restart unless-stopped \
   anxina/xcomic-hub
@@ -77,23 +81,32 @@ docker run -d \
 ### 方式三：Docker Compose
 
 ```yaml
+version: '3.8'
+
 services:
-  xcomic:
-    image: anxina/xcomic-hub
-    container_name: xcomic-hub
+  manhua:
+    build: .
+    container_name: manhua-app
     ports:
       - "8724:8724"
     volumes:
-      - xcomic-data:/app/data
-      - xcomic-downloads:/download
+      - manhua-data:/app/data
+      - ./comics:/comics
+      - ./nfo:/nfo
+      - ./download:/download
     environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=change-this-to-a-random-secret  # 生产环境请修改为随机密钥
+      - COMICS_DIR=/comics
+      - NFO_DIR=/nfo
       - DOWNLOAD_DIR=/download
-      # - SECRET_KEY=your-secret-key  # 可选，如需自定义 Flask 密钥
+      - GEVENT_RESOLVER=thread
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
-  xcomic-data:
-  xcomic-downloads:
+  manhua-data:
 ```
 
 > 💡 **提示**：生产环境建议通过 `SECRET_KEY` 环境变量设置随机密钥防止会话伪造，可用 `python -c "import secrets; print(secrets.token_hex(32))"` 生成
@@ -128,8 +141,10 @@ xcomic-hub/
 
 | 容器路径 | 说明 | 宿主机建议挂载 |
 |----------|------|----------------|
-| `/app/data` | 数据库、封面、NFO 等数据 | `xcomic-data:/app/data` |
-| `/download` | 下载任务目录（种子/磁力下载） | `xcomic-downloads:/download` |
+| `/app/data` | 数据库、封面、页面缓存、暂存区 | `manhua-data:/app/data`（数据卷） |
+| `/comics` | 漫画文件目录（`COMICS_DIR`） | `./comics:/comics` |
+| `/nfo` | NFO 元数据目录（`NFO_DIR`） | `./nfo:/nfo` |
+| `/download` | 下载任务目录（`DOWNLOAD_DIR`） | `./download:/download` |
 
 ## 配置说明
 
@@ -137,10 +152,11 @@ xcomic-hub/
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `SECRET_KEY` | manhua-dev-secret-key | Flask 密钥（可选，生产环境建议修改） |
+| `SECRET_KEY` | manhua-dev-secret-key-change-in-production | Flask 密钥（可选，生产环境建议修改） |
+| `DATA_DIR` | /app/data | 数据存储目录（数据库、封面、页面缓存） |
+| `COMICS_DIR` | /comics | 漫画文件目录 |
+| `NFO_DIR` | /nfo | NFO 元数据目录 |
 | `DOWNLOAD_DIR` | /download | 下载任务目录 |
-| `DATA_DIR` | /app/data | 数据存储目录 |
-| `COMICS_DIR` | /app/data/comics | 漫画文件目录 |
 | `DB_PATH` | /app/data/manhua.db | 数据库路径 |
 | `FLASK_ENV` | production | 运行环境 |
 
