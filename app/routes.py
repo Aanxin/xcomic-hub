@@ -12,6 +12,7 @@ from app.reader import get_comic_pages, get_page_dir, is_readable, cleanup_pages
 from config import COMICS_DIR, COVERS_DIR, NFO_DIR, PAGES_DIR, DATA_DIR, ALLOWED_EXTENSIONS, IMAGE_EXTENSIONS, DOWNLOAD_DIR
 
 from app.utils.file_utils import safe_filename, resolve_conflict, allowed_file, get_storage_subdir, group_tags
+from app.utils.sort_utils import resolve_direction, apply_order
 from app.utils.proxy_utils import get_proxy_handler, urlopen_with_proxy, parse_proxy_url
 from app.scrapers.scraper_factory import ScraperFactory
 from app.clients.http_client import urlopen_native
@@ -108,13 +109,17 @@ def index():
     elif view_filter == 'collection':
         standalone = Comic.query.filter(False)
 
+    order = request.args.get('order', '').strip().lower()
+
     sort_map = {
-        'updated': (Collection.updated_at.desc(), Comic.updated_at.desc()),
-        'created': (Collection.created_at.desc(), Comic.created_at.desc()),
-        'title': (Collection.name.asc(), Comic.title.asc()),
-        'size': (Collection.id.asc(), Comic.file_size.desc()),
+        'updated': ((Collection.updated_at, 'desc'), (Comic.updated_at, 'desc')),
+        'created': ((Collection.created_at, 'desc'), (Comic.created_at, 'desc')),
+        'title': ((Collection.name, 'asc'), (Comic.title, 'asc')),
+        'size': ((Collection.id, 'asc'), (Comic.file_size, 'desc')),
     }
-    col_sort, comic_sort = sort_map.get(sort, sort_map['updated'])
+    (col_col, col_default), (comic_col, comic_default) = sort_map.get(sort, sort_map['updated'])
+    col_dir = resolve_direction(order, col_default)
+    comic_dir = resolve_direction(order, comic_default)
 
     if view_filter == 'random':
         collections = collections.order_by(db.func.random()).limit(per_page).all()
@@ -129,8 +134,10 @@ def index():
                 self.per_page = per_page
         standalone_pag = FakePagination(standalone_items, per_page)
     else:
-        collections = collections.order_by(col_sort).all()
-        standalone_pag = standalone.order_by(comic_sort).paginate(page=page, per_page=per_page, error_out=False)
+        collections = collections.order_by(apply_order(col_col, col_dir)).all()
+        standalone_pag = standalone.order_by(apply_order(comic_col, comic_dir)).paginate(page=page, per_page=per_page, error_out=False)
+
+    effective_order = comic_dir
 
     comic_ids = [c.id for c in standalone_pag.items]
     histories = ReadingHistory.query.filter(ReadingHistory.comic_id.in_(comic_ids)).all() if comic_ids else []
@@ -148,7 +155,8 @@ def index():
 
     return render_template('index.html', collections=collections, comics=standalone_pag.items,
                            pagination=standalone_pag, search=search, history_map=history_map,
-                           col_histories=col_histories, view_filter=view_filter, sort=sort)
+                           col_histories=col_histories, view_filter=view_filter, sort=sort,
+                           order=effective_order)
 
 
 @bp.route('/comic/<int:comic_id>')
