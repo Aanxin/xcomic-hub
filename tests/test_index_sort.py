@@ -95,6 +95,12 @@ def test_sort_size_order_asc_ascending(client, seeded_comics):
     assert _comic_titles_in_order(resp) == ["Alpha", "Bravo", "Charlie"]
 
 
+def test_sort_size_no_order_defaults_to_desc(client, seeded_comics):
+    # size default direction is desc -> largest (Charlie) first.
+    resp = client.get("/?sort=size")
+    assert _comic_titles_in_order(resp) == ["Charlie", "Bravo", "Alpha"]
+
+
 def test_sort_updated_illegal_order_falls_back_to_desc(client, seeded_comics):
     # Illegal order must fall back to the field's default (desc for updated).
     resp = client.get("/?sort=updated&order=ILLEGAL")
