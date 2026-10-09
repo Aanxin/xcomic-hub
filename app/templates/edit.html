@@ -317,13 +317,20 @@ function scrapeFromUrl(overwrite) {
     }
     _scrapeOverwrite = !!overwrite;
     setScrapeLoading();
-    fetch('/api/scrape-info', {
+    fetch('/api/v1/scraper/scrape', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({url: url})
     })
     .then(function(r) { return r.json(); })
-    .then(fillForm)
+    .then(function(resp) {
+        if (resp.code !== 0) {
+            document.getElementById('scrapeStatus').textContent = resp.message || '采集失败';
+            document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+            return;
+        }
+        fillForm(resp.data || {});
+    })
     .catch(function(err) {
         document.getElementById('scrapeStatus').textContent = '采集失败: ' + err.message;
         document.getElementById('scrapeStatus').style.color = 'var(--accent)';
@@ -381,15 +388,33 @@ function scrapeFromFile(overwrite) {
     }
     _scrapeOverwrite = !!overwrite;
     setScrapeLoading();
-    var formData = new FormData();
-    formData.append('html_file', fileInput.files[0]);
-    fetch('/api/scrape-info', {method: 'POST', body: formData})
-    .then(function(r) { return r.json(); })
-    .then(fillForm)
-    .catch(function(err) {
-        document.getElementById('scrapeStatus').textContent = '采集失败: ' + err.message;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var html = e.target.result;
+        fetch('/api/v1/scraper/scrape-html', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({html: html, url: ''})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(resp) {
+            if (resp.code !== 0) {
+                document.getElementById('scrapeStatus').textContent = resp.message || '采集失败';
+                document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+                return;
+            }
+            fillForm(resp.data || {});
+        })
+        .catch(function(err) {
+            document.getElementById('scrapeStatus').textContent = '采集失败: ' + err.message;
+            document.getElementById('scrapeStatus').style.color = 'var(--accent)';
+        });
+    };
+    reader.onerror = function() {
+        document.getElementById('scrapeStatus').textContent = '无法读取文件';
         document.getElementById('scrapeStatus').style.color = 'var(--accent)';
-    });
+    };
+    reader.readAsText(fileInput.files[0], 'utf-8');
 }
 
 function pasteFromClipboard(overwrite) {

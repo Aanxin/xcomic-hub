@@ -10,6 +10,7 @@ NFO_DIR = os.environ.get('NFO_DIR', os.path.join(DATA_DIR, 'nfo'))
 COVERS_DIR = os.path.join(DATA_DIR, 'covers')
 PAGES_DIR = os.path.join(DATA_DIR, 'pages')
 DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR', os.path.join(DATA_DIR, 'download'))
+IMAGE_CACHE_DIR = os.environ.get('IMAGE_CACHE_DIR', os.path.join(DATA_DIR, 'image_cache'))
 DB_PATH = os.environ.get('DB_PATH', os.path.join(DATA_DIR, 'manhua.db'))
 
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', f'sqlite:///{DB_PATH}')

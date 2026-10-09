@@ -39,3 +39,20 @@ downloads/
 temp/
 tmp/
 cache/
+comics/
+nfo/
+
+# IDE / AI 工具
+.zcode/
+
+# 调试与临时文件
+_tmp_*
+*.bak*
+_tasks.txt
+debug_*.py
+check_task.py
+test_ehentai_download.py
+
+# 内部开发文档（与 docs/ 同类）
+CODE_WIKI.md
+DOWNLOAD_LOGIC.md

@@ -303,11 +303,11 @@ async function uploadNfoFiles() {
         const formData = new FormData();
         formData.append('nfo_file', f);
         try {
-            const resp = await fetch('/api/chunked-upload/nfo-files', {method: 'POST', body: formData});
-            const data = await resp.json();
-            if (!data.error) {
+            const resp = await fetch('/api/v1/uploads/nfo', {method: 'POST', body: formData});
+            const result = await resp.json();
+            if (result.code === 0 && result.data) {
                 const base = f.name.replace(/\.nfo$/i, '');
-                nfoMap[base] = data.nfo_filename;
+                nfoMap[base] = result.data.nfo_filename;
             }
         } catch(e) {}
     }
@@ -322,11 +322,11 @@ async function uploadCoverFiles() {
         const formData = new FormData();
         formData.append('cover_file', f);
         try {
-            const resp = await fetch('/api/chunked-upload/cover-files', {method: 'POST', body: formData});
-            const data = await resp.json();
-            if (!data.error) {
+            const resp = await fetch('/api/v1/uploads/cover', {method: 'POST', body: formData});
+            const result = await resp.json();
+            if (result.code === 0 && result.data) {
                 const base = f.name.replace(/\.[^.]+$/, '');
-                coverMap[base] = data.cover_filename;
+                coverMap[base] = result.data.cover_filename;
             }
         } catch(e) {}
     }
@@ -474,7 +474,7 @@ async function uploadFileChunks(idx) {
     if (!item || !item.file) return;
 
     try {
-        const initResp = await fetch('/api/chunked-upload/init', {
+        const initResp = await fetch('/api/v1/uploads/init', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -489,18 +489,18 @@ async function uploadFileChunks(idx) {
                 volume: item.volume,
             })
         });
-        const initData = await initResp.json();
-        if (initData.error) {
-            if (initData.duplicate) {
+        const initResult = await initResp.json();
+        if (initResult.code !== 0) {
+            if (initResult.code === 409) {
                 item.status = 'duplicate';
-                item.error = initData.error;
             } else {
                 item.status = 'failed';
-                item.error = initData.error;
             }
+            item.error = initResult.message || '初始化失败';
             renderFileList();
             return;
         }
+        const initData = initResult.data;
 
         item.uploadId = initData.id;
         item.uploadedChunks = initData.uploaded_chunks || [];
@@ -535,18 +535,19 @@ async function uploadFileChunks(idx) {
             formData.append('chunk', chunkBlob);
 
             try {
-                const chunkResp = await fetch('/api/chunked-upload/chunk', {
+                const chunkResp = await fetch('/api/v1/uploads/chunk', {
                     method: 'POST',
                     body: formData,
                     signal: item.abortController.signal,
                 });
-                const chunkData = await chunkResp.json();
-                if (chunkData.error) {
+                const chunkResult = await chunkResp.json();
+                if (chunkResult.code !== 0) {
                     item.status = 'failed';
-                    item.error = chunkData.error;
+                    item.error = chunkResult.message || '分片上传失败';
                     renderFileList();
                     return;
                 }
+                const chunkData = chunkResult.data;
                 item.uploadedChunks = chunkData.uploaded_chunks || [];
                 item.progress = chunkData.progress || Math.round(((i + 1) / item.totalChunks) * 100);
                 renderFileList();
@@ -564,15 +565,15 @@ async function uploadFileChunks(idx) {
             item.progress = 100;
             renderFileList();
 
-            const completeResp = await fetch('/api/chunked-upload/complete', {
+            const completeResp = await fetch('/api/v1/uploads/complete', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({upload_id: item.uploadId})
             });
-            const completeData = await completeResp.json();
-            if (completeData.error) {
+            const completeResult = await completeResp.json();
+            if (completeResult.code !== 0) {
                 item.status = 'failed';
-                item.error = completeData.error;
+                item.error = completeResult.message || '合并失败';
                 renderFileList();
                 return;
             }
@@ -591,9 +592,16 @@ function pollAssemblyStatus(idx) {
     if (!item || !item.uploadId) return;
 
     const poll = () => {
-        fetch('/api/chunked-upload/status/' + item.uploadId)
+        fetch('/api/v1/uploads/' + item.uploadId + '/status')
             .then(r => r.json())
-            .then(data => {
+            .then(result => {
+                if (result.code !== 0) {
+                    item.status = 'failed';
+                    item.error = result.message || '查询状态失败';
+                    renderFileList();
+                    return;
+                }
+                const data = result.data;
                 if (data.status === 'completed') {
                     item.status = 'completed';
                     item.progress = 100;
@@ -621,7 +629,7 @@ function pauseFile(idx) {
     if (item.abortController) {
         item.abortController.abort();
     }
-    fetch('/api/chunked-upload/pause', {
+    fetch('/api/v1/uploads/pause', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({upload_id: item.uploadId})
@@ -646,7 +654,7 @@ function cancelFile(idx) {
     item.status = 'cancelled';
     renderFileList();
     if (item.uploadId) {
-        fetch('/api/chunked-upload/cancel', {
+        fetch('/api/v1/uploads/cancel', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({upload_id: item.uploadId})

@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+{% block title %}漫画源浏览{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- 视图 1：源选择（默认显示） -->
+    <div id="sourceSelectView">
+        <h4 class="mb-4"><i class="bi bi-globe2"></i> 选择漫画源</h4>
+        <div id="sourceGrid" class="row g-3"></div>
+    </div>
+
+    <!-- 视图 2：源内浏览（点击源后显示） -->
+    <div id="browseView" class="d-none">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-outline-secondary" id="backToSourcesBtn" title="返回源选择">
+                    <i class="bi bi-arrow-left"></i> 源列表
+                </button>
+                <h4 class="mb-0"><i class="bi bi-globe2"></i> <span id="currentSourceName"></span></h4>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <select id="sortSelect" class="form-select form-select-sm d-none" style="width: 130px;" title="热度时间范围">
+                    <option value="today" selected>今天</option>
+                    <option value="week">星期</option>
+                    <option value="all">一直以来</option>
+                </select>
+                <select id="languageSelect" class="form-select form-select-sm" style="width: 130px;" title="语言筛选">
+                    <option value="chinese" selected>中文</option>
+                    <option value="japanese">日语</option>
+                    <option value="english">英语</option>
+                    <option value="korean">韩语</option>
+                    <option value="all">全部语言</option>
+                </select>
+                <div class="input-group input-group-sm" style="width: 280px;">
+                    <input type="text" id="searchInput" class="form-control" placeholder="搜索关键词，回车确认">
+                    <button class="btn btn-outline-secondary" id="clearSearchBtn" title="清除搜索"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 大类切换（首页/订阅/热门/排行；源仅一个大类时隐藏） -->
+        <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+            <ul class="nav nav-pills gap-2 d-none" id="categoryTabs"></ul>
+            <!-- 排行时间范围（仅 toplist 大类显示；按时间由近到远排序，默认过去一天） -->
+            <select id="periodSelect" class="form-select form-select-sm d-none" style="width: 130px;" title="排行时间范围">
+                <option value="day" selected>过去一天</option>
+                <option value="month">过去一月</option>
+                <option value="year">过去一年</option>
+                <option value="all">有史以来</option>
+            </select>
+        </div>
+
+        <div id="galleryGrid" class="row g-3"></div>
+
+        <div class="d-flex justify-content-center align-items-center gap-3 my-4">
+            <button class="btn btn-sm btn-outline-secondary" id="prevPageBtn"><i class="bi bi-chevron-left"></i> 上一页</button>
+            <span id="pageLabel" class="text-secondary" style="font-size: 0.9rem;">第 1 页</span>
+            <button class="btn btn-sm btn-outline-secondary" id="nextPageBtn">下一页 <i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- 画廊详情浮层（必须放在 body 直接子级：main 有 z-index:1 层叠上下文，
+     嵌套在内会被 Bootstrap backdrop(z-index:1050) 盖住导致按钮无法点击） -->
+<div class="modal fade" id="galleryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="background: var(--bg-modal);">
+            <div class="modal-header">
+                <h5 class="modal-title" id="galleryModalTitle" style="max-width: 90%; overflow-wrap: anywhere;"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <img id="detailCover" class="w-100 rounded" style="aspect-ratio: 3/4; object-fit: cover; background: var(--bg-tertiary);" loading="lazy"
+                             onerror="this.style.display='none'">
+                    </div>
+                    <div class="col-md-8">
+                        <div id="detailMeta" class="small"></div>
+                        <div id="detailActions" class="mt-4 d-flex align-items-center gap-3 flex-wrap">
+                            <button class="btn btn-primary" id="scrapeBtn"><i class="bi bi-cloud-download"></i> 抓取整本入库</button>
+                            <a class="btn btn-success d-none" id="openComicBtn" href="#"><i class="bi bi-book"></i> 已在库中 →</a>
+                            <span id="scrapeStatus" class="text-secondary" style="font-size: 0.85rem;"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const API = '/api/v1/sources';
+    // 支持热度时间范围排序的源（其余源隐藏排序下拉）
+    const SORTABLE_SOURCES = ['nhentai'];
+    let currentSource = '';
+    let currentSourceInfo = null;  // {id, name, categories}
+    let currentCategory = 'home';
+    let currentPeriod = 'day';     // 排行时间范围（仅 toplist 使用，默认过去一天）
+    let currentSort = 'today';     // 热度时间范围（仅支持排序的源使用，默认今天）
+    let currentPage = 1;
+    let currentKeyword = '';
+    // 当前搜索是否为 tag 点击发起：true 时后端用站点精确 tag 语法
+    // （EH 引号+$，对齐站点 /tag/ 路由语义）；手动输入/清除则重置
+    let currentExactTag = false;
+    let currentLanguage = localStorage.getItem('browse_language') || 'chinese';
+    let currentGallery = null;   // {url, title}
+    // 游标分页栈：cursorPages[i] 为到达第 i+1 页所用的游标（null = 数字页码）。
+    // E-Hentai 改版后用 next= 游标翻页，需逐页记录才能支持“上一页”。
+    let cursorPages = [null];
+
+    function resetList() {
+        currentPage = 1;
+        cursorPages = [null];
+        loadList();
+    }
+
+    const el = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const proxy = url => `${API}/image?url=${encodeURIComponent(url)}`;
+
+    // ---------- 源初始化（仅渲染源卡片，不加载画廊列表） ----------
+    let sourceNameMap = {};
+    let sourceInfoMap = {};
+
+    async function initSources() {
+        try {
+            const r = await fetch(API);
+            const j = await r.json();
+            const sources = j.data || [];
+            sourceNameMap = Object.fromEntries(sources.map(s => [s.id, s.name]));
+            sourceInfoMap = Object.fromEntries(sources.map(s => [s.id, s]));
+            el('sourceGrid').innerHTML = sources.map(s => `
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="card h-100 comic-card text-center" style="background: var(--bg-card); cursor: pointer;" data-source-id="${esc(s.id)}">
+                        <div class="card-body d-flex flex-column align-items-center justify-content-center" style="min-height: 160px;">
+                            <i class="bi bi-globe2" style="font-size: 2.2rem; color: var(--accent);"></i>
+                            <div class="mt-2" style="font-weight: 600;">${esc(s.name)}</div>
+                        </div>
+                    </div>
+                </div>`).join('') || `<div class="text-center text-secondary py-5">没有可用的漫画源</div>`;
+        } catch (e) {
+            el('sourceGrid').innerHTML = `<div class="text-center text-secondary py-5">加载源列表失败</div>`;
+        }
+    }
+
+    // ---------- 大类切换 ----------
+    function renderCategoryTabs() {
+        const cats = (currentSourceInfo && currentSourceInfo.categories) || [];
+        const ul = el('categoryTabs');
+        if (cats.length <= 1) {
+            ul.classList.add('d-none');
+            ul.innerHTML = '';
+        } else {
+            ul.classList.remove('d-none');
+            ul.innerHTML = cats.map(c => `
+                <li class="nav-item">
+                    <button type="button" class="nav-link${c.id === currentCategory ? ' active' : ''}" data-category="${esc(c.id)}">${esc(c.name)}</button>
+                </li>`).join('');
+        }
+        // 时间范围选择器仅排行大类显示
+        el('periodSelect').classList.toggle('d-none', currentCategory !== 'toplist');
+    }
+
+    function switchCategory(category) {
+        if (category === currentCategory) return;
+        currentCategory = category;
+        currentPeriod = 'day';
+        el('periodSelect').value = 'day';
+        // 大类切换 = 全新列表：清空关键词（搜索始终为全局搜索，不带大类）
+        currentKeyword = '';
+        currentExactTag = false;
+        el('searchInput').value = '';
+        renderCategoryTabs();
+        resetList();
+    }
+
+    // 事件委托：大类标签点击
+    el('categoryTabs').addEventListener('click', e => {
+        const btn = e.target.closest('[data-category]');
+        if (btn) switchCategory(btn.dataset.category);
+    });
+
+    // 排行时间范围切换
+    el('periodSelect').addEventListener('change', () => {
+        currentPeriod = el('periodSelect').value;
+        resetList();
+    });
+
+    // 热度时间范围切换（nhentai 搜索排序）
+    el('sortSelect').addEventListener('change', () => {
+        currentSort = el('sortSelect').value;
+        resetList();
+    });
+
+    // 点击源卡片 → 进入该源浏览
+    function enterBrowse(sourceId) {
+        currentSource = sourceId;
+        currentSourceInfo = sourceInfoMap[sourceId] || null;
+        currentCategory = 'home';
+        currentPeriod = 'day';
+        el('periodSelect').value = 'day';
+        currentSort = 'today';
+        el('sortSelect').value = 'today';
+        // 热度排序仅支持排序的源显示（目前 nhentai）
+        el('sortSelect').classList.toggle('d-none', !SORTABLE_SOURCES.includes(sourceId));
+        el('currentSourceName').textContent = sourceNameMap[sourceId] || sourceId;
+        el('sourceSelectView').classList.add('d-none');
+        el('browseView').classList.remove('d-none');
+        renderCategoryTabs();
+        resetList();
+    }
+
+    // 事件委托：源卡片点击
+    el('sourceGrid').addEventListener('click', e => {
+        const card = e.target.closest('[data-source-id]');
+        if (card) enterBrowse(card.dataset.sourceId);
+    });
+
+    // 返回源选择页
+    el('backToSourcesBtn').addEventListener('click', () => {
+        currentSource = '';
+        currentSourceInfo = null;
+        currentCategory = 'home';
+        currentPeriod = 'day';
+        currentKeyword = '';
+        currentExactTag = false;
+        el('searchInput').value = '';
+        el('galleryGrid').innerHTML = '';
+        el('browseView').classList.add('d-none');
+        el('sourceSelectView').classList.remove('d-none');
+    });
+
+    // 恢复上次选择的语言
+    if (localStorage.getItem('browse_language')) {
+        el('languageSelect').value = currentLanguage;
+    }
+
+    el('languageSelect').addEventListener('change', () => {
+        currentLanguage = el('languageSelect').value;
+        localStorage.setItem('browse_language', currentLanguage);
+        resetList();
+    });
+
+    el('searchInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            currentKeyword = el('searchInput').value.trim();
+            currentExactTag = false;  // 手动搜索一律普通关键词模式
+            resetList();
+        }
+    });
+
+    el('clearSearchBtn').addEventListener('click', () => {
+        el('searchInput').value = '';
+        currentKeyword = '';
+        currentExactTag = false;
+        resetList();
+    });
+
+    el('prevPageBtn').addEventListener('click', () => { if (currentPage > 1) { currentPage--; loadList(); } });
+    el('nextPageBtn').addEventListener('click', () => {
+        currentPage++;
+        loadList();
+    });
+
+    // ---------- 列表加载 ----------
+    async function loadList() {
+        const grid = el('galleryGrid');
+        grid.innerHTML = `<div class="text-center text-secondary py-5"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>`;
+        el('pageLabel').textContent = `第 ${currentPage} 页`;
+
+        // 语言下拉按本次请求是否真正生效启用：popular/toplist 浏览列表
+        // 站点忽略语言参数（实测 chinese/japanese 卡数均不变）；搜索始终生效
+        const langEffective = !!currentKeyword || !['popular', 'toplist'].includes(currentCategory);
+        el('languageSelect').disabled = !langEffective;
+        el('languageSelect').title = langEffective ? '语言筛选' : '该大类列表不支持语言筛选';
+
+        // 热度排序生效性：仅 nhentai 支持；且浏览"全部语言"时走站点首页
+        // 固定列表，sort 参数被站点忽略（实测默认与 popular-today 同序）；
+        // 搜索时始终可用
+        const sortEffective = SORTABLE_SOURCES.includes(currentSource)
+            && (!!currentKeyword || currentLanguage !== 'all');
+        el('sortSelect').disabled = !sortEffective;
+        el('sortSelect').title = sortEffective ? '热度时间范围' : '当前列表不支持热度排序';
+
+        let url;
+        const langParam = `&language=${encodeURIComponent(currentLanguage)}`;
+        // 本页游标（null 则走数字页码）
+        const cursor = cursorPages[currentPage - 1] ?? null;
+        const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+        const sortParam = SORTABLE_SOURCES.includes(currentSource) ? `&sort=${encodeURIComponent(currentSort)}` : '';
+        const exactParam = currentExactTag ? '&exact_tag=1' : '';
+        if (currentKeyword) {
+            url = `${API}/${encodeURIComponent(currentSource)}/search?keyword=${encodeURIComponent(currentKeyword)}&page=${currentPage}${langParam}${sortParam}${cursorParam}${exactParam}`;
+        } else {
+            const catParam = `&category=${encodeURIComponent(currentCategory)}`;
+            const periodParam = currentCategory === 'toplist' ? `&period=${encodeURIComponent(currentPeriod)}` : '';
+            url = `${API}/${encodeURIComponent(currentSource)}/latest?page=${currentPage}${langParam}${catParam}${periodParam}${sortParam}${cursorParam}`;
+        }
+
+        try {
+            const r = await fetch(url);
+            const j = await r.json();
+            if (j.code !== 0) throw new Error(j.message || '加载失败');
+            renderGrid(j.data.items || []);
+            el('nextPageBtn').disabled = !j.data.has_next;
+            // 记录到达下一页所需的游标，供“下一页”使用
+            if (j.data.has_next) {
+                cursorPages[currentPage] = j.data.next_cursor || null;
+            }
+        } catch (e) {
+            grid.innerHTML = `<div class="text-center text-secondary py-5">${esc(e.message)}</div>`;
+        }
+    }
+
+    function renderGrid(items) {
+        const grid = el('galleryGrid');
+        if (!items.length) {
+            // 订阅大类需登录：空结果给出配置指引
+            const hint = (currentCategory === 'watched' && !currentKeyword)
+                ? '<div class="small mt-2">订阅列表为空：需在设置中配置 E-Hentai Cookie，并在站点上订阅标签/画廊</div>'
+                : '';
+            grid.innerHTML = `<div class="text-center text-secondary py-5">没有结果${hint}</div>`;
+            return;
+        }
+        grid.innerHTML = items.map(c => `
+            <div class="col-6 col-md-4 col-lg-3">
+                <div class="card h-100 comic-card" style="background: var(--bg-card); cursor: pointer;" data-gallery-url="${esc(c.url)}">
+                    <div style="aspect-ratio: 3/4; background: var(--bg-tertiary);" class="rounded-top overflow-hidden position-relative">
+                        ${c.cover_url
+                            ? `<img src="${esc(proxy(c.cover_url))}" loading="lazy" class="w-100 h-100" style="object-fit: cover;" onerror="this.style.display='none'">`
+                            : ''}
+                        ${c.rank ? `<span class="badge position-absolute top-0 start-0 m-1" style="background: var(--accent);">Top ${esc(c.rank)}</span>` : ''}
+                        ${c.in_library ? `<span class="badge position-absolute top-0 end-0 m-1" style="background: var(--success); color: #06281a;" title="已在库中"><i class="bi bi-check-lg"></i></span>` : ''}
+                    </div>
+                    <div class="card-body py-2 px-2">
+                        <div class="fw-semibold" title="${esc(c.title)}" style="font-size: 0.92rem; line-height: 1.3; color: var(--text-primary, inherit); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${esc(c.title)}</div>
+                        <div class="text-secondary" style="font-size: 0.75rem;">${c.rank ? `第 ${esc(c.rank)} 名` : `${c.page_count || '?'} 页`}</div>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    // 事件委托：点击卡片打开详情弹窗（替代内联 onclick，避免转义/backdrop 问题）
+    el('galleryGrid').addEventListener('click', e => {
+        const card = e.target.closest('[data-gallery-url]');
+        if (card) openGallery(card.dataset.galleryUrl);
+    });
+
+    // ---------- 画廊详情 ----------
+    function getModal() {
+        // 单例复用，避免重复实例导致 backdrop 叠加、页面点击失效
+        return bootstrap.Modal.getOrCreateInstance(el('galleryModal'));
+    }
+
+    async function openGallery(url) {
+        const modal = getModal();
+        el('galleryModalTitle').textContent = '加载中...';
+        el('detailMeta').innerHTML = '';
+        el('detailCover').style.display = 'none';
+        el('openComicBtn').classList.add('d-none');
+        el('scrapeBtn').disabled = false;
+        el('scrapeStatus').textContent = '';
+        modal.show();
+
+        try {
+            const r = await fetch(`${API}/gallery?url=${encodeURIComponent(url)}`);
+            const j = await r.json();
+            if (j.code !== 0) throw new Error(j.message || '获取详情失败');
+            const d = j.data;
+            currentGallery = { url: url, title: d.title || '' };
+            el('galleryModalTitle').textContent = d.title || '(无标题)';
+            if (d.cover_url) {
+                el('detailCover').src = proxy(d.cover_url);
+                el('detailCover').style.display = '';
+            }
+            renderDetailMeta(d);
+        } catch (e) {
+            el('galleryModalTitle').textContent = '获取详情失败';
+            el('detailMeta').innerHTML = `<span class="text-danger">${esc(e.message)}</span>`;
+        }
+    }
+
+    function renderDetailMeta(d) {
+        const rows = [
+            ['作者', d.author], ['分类', d.category], ['语言', d.language],
+            ['页数', d.page_count], ['评分', d.rating],
+        ];
+        let html = rows
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .map(([k, v]) => `<div class="mb-1"><span class="text-secondary">${k}：</span>${esc(v)}</div>`).join('');
+
+        // 标签按分类分组显示（对齐 detail 页样式，点击可搜索）
+        // 显示用翻译名，搜索用原始名（源站按英文 tag 检索，中文搜不到结果）
+        if (d.grouped_tags && d.grouped_tags.length) {
+            html += d.grouped_tags.map(g => `
+                <div class="mt-2">
+                    <span style="color: var(--accent); font-weight: bold; font-size: 0.85rem;">${esc(g.category)}</span>
+                    <div class="ms-2 d-inline-flex flex-wrap gap-1">
+                        ${g.tags.map((t, i) => `<a href="#" class="badge tag-badge" style="text-decoration: none;" data-tag-search="${esc(g.raw_category)}:${esc(g.raw_tags[i])}">${esc(t)}</a>`).join('')}
+                    </div>
+                </div>`).join('');
+        }
+        if (d.uncat_tags && d.uncat_tags.length) {
+            html += `
+                <div class="mt-2">
+                    <div class="ms-2 d-inline-flex flex-wrap gap-1">
+                        ${d.uncat_tags.map((t, i) => `<a href="#" class="badge tag-badge" style="text-decoration: none;" data-tag-search="${esc((d.raw_uncat_tags || [])[i] ?? t)}">${esc(t)}</a>`).join('')}
+                    </div>
+                </div>`;
+        }
+        el('detailMeta').innerHTML = html;
+    }
+
+    // 标签点击 → 关闭弹窗并按该标签搜索
+    el('detailMeta').addEventListener('click', e => {
+        const badge = e.target.closest('[data-tag-search]');
+        if (!badge) return;
+        e.preventDefault();
+        currentKeyword = badge.dataset.tagSearch;
+        // 精确 tag 搜索：与站点点击 tag 的 /tag/ 路由同义（EH 后端转引号+$），
+        // 避免 f:wolf 裸拼前缀命中 wolf girl 这类污染结果
+        currentExactTag = true;
+        el('searchInput').value = currentKeyword;
+        currentPage = 1;
+        getModal().hide();
+        loadList();
+    });
+
+    // ---------- 抓取 ----------
+    el('scrapeBtn').addEventListener('click', async () => {
+        if (!currentGallery) return;
+        el('scrapeBtn').disabled = true;
+        el('scrapeStatus').innerHTML = '<div class="spinner-border spinner-border-sm"></div> 提交中...';
+        try {
+            const r = await fetch(`${API}/scrape`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: currentGallery.url }),
+            });
+            const j = await r.json();
+            if (j.code !== 0) throw new Error(j.message || '提交失败');
+            // 任务统一在下载页跟踪：提示 + 跳转入口（此处不轮询）
+            el('scrapeStatus').innerHTML =
+                '已加入下载列表 <a href="/download" class="info-link">查看进度 →</a>';
+        } catch (e) {
+            el('scrapeBtn').disabled = false;
+            el('scrapeStatus').textContent = e.message;
+        }
+    });
+
+    // ---------- 启动 ----------
+    initSources();
+})();
+</script>
+{% endblock %}

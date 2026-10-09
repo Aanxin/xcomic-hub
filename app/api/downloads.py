@@ -1,134 +1,105 @@
-import os
-import uuid
-import json
+from flask import Blueprint
 
-from flask import Blueprint, request
 from app import db
 from app.models import DownloadTask
-from app.services.download_service import DownloadService, get_next_queue_position
-from app.utils.file_utils import safe_filename, resolve_conflict
+from app.services.download_service import DownloadService
 from app.api.utils import success_response, error_response, ErrorCode
-from config import DOWNLOAD_DIR
 
 bp = Blueprint('api_downloads', __name__, url_prefix='/api/v1/downloads')
 
 
-@bp.route('/start', methods=['POST'])
-def start_download():
-    data = request.get_json(silent=True) or {}
-    url = data.get('url', '').strip()
-    if not url:
-        return error_response(ErrorCode.BAD_REQUEST, '请输入网址')
-    if not url.startswith(('http://', 'https://')):
-        return error_response(ErrorCode.BAD_REQUEST, '网址必须以 http:// 或 https:// 开头')
-
-    task_id = uuid.uuid4().hex[:8]
-    task = DownloadTask(
-        id=task_id,
-        url=url,
-        status='pending',
-        message='等待队列中...',
-        queue='waiting',
-        queue_position=get_next_queue_position(),
-    )
-    db.session.add(task)
-    db.session.commit()
-
-    return success_response(data=task.to_dict(), message='下载任务已创建')
-
-
-@bp.route('/torrent', methods=['POST'])
-def upload_torrent():
-    torrent_file_obj = request.files.get('torrent_file')
-    if not torrent_file_obj or torrent_file_obj.filename == '':
-        return error_response(ErrorCode.BAD_REQUEST, '请选择种子文件')
-
-    filename = torrent_file_obj.filename
-    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-    if ext != 'torrent':
-        return error_response(ErrorCode.BAD_REQUEST, '仅支持 .torrent 文件')
-
-    safe_name = safe_filename(filename)
-    if not safe_name:
-        safe_name = f"{uuid.uuid4().hex}.torrent"
-
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    safe_name = resolve_conflict(DOWNLOAD_DIR, safe_name)
-    torrent_path = os.path.join(DOWNLOAD_DIR, safe_name)
-    torrent_file_obj.save(torrent_path)
-
-    url = request.form.get('url', '').strip()
-    title = request.form.get('title', '').strip()
-
-    task_id = uuid.uuid4().hex[:8]
-    task = DownloadTask(
-        id=task_id,
-        url=url,
-        title=title or os.path.splitext(safe_name)[0],
-        status='pending',
-        message='等待队列中...',
-        queue='waiting',
-        queue_position=get_next_queue_position(),
-        torrent_file=safe_name,
-    )
-    db.session.add(task)
-    db.session.commit()
-
-    return success_response(data=task.to_dict(), message='种子文件已上传')
-
-
-@bp.route('/nfo', methods=['POST'])
-def add_nfo_task():
-    data = request.get_json(silent=True) or {}
-    source_url = data.get('source_url', '').strip()
-    title = data.get('title', '').strip()
-    if not source_url:
-        return error_response(ErrorCode.BAD_REQUEST, 'NFO 数据中缺少 source_url')
-
-    task_id = uuid.uuid4().hex[:8]
-    task = DownloadTask(
-        id=task_id,
-        url=source_url,
-        title=title or source_url,
-        status='pending',
-        message='等待队列中 (NFO)',
-        queue='waiting',
-        queue_position=get_next_queue_position(),
-        nfo_data=json.dumps(data, ensure_ascii=False),
-    )
-    db.session.add(task)
-    db.session.commit()
-
-    return success_response(data=task.to_dict(), message='NFO 任务已添加到队列')
-
-
 @bp.route('/tasks', methods=['GET'])
 def list_tasks():
+    """统一下载列表：合并图片抓取（ScrapeTask）与种子下载（DownloadTask）。
+
+    进行中在前（创建时间倒序），完成/失败在后（更新时间倒序）。
+    """
+    from app.models import ScrapeTask
+
     DownloadService.update_download_progress()
-    waiting = DownloadTask.query.filter_by(queue='waiting')\
-        .order_by(DownloadTask.queue_position.asc(), DownloadTask.created_at.asc()).all()
-    downloading = DownloadTask.query.filter(
-        DownloadTask.queue == 'downloading',
-        DownloadTask.status.notin_(['done', 'error'])
-    ).order_by(DownloadTask.created_at.desc()).all()
-    done = DownloadTask.query.filter(
-        DownloadTask.status.in_(['done', 'error'])
-    ).order_by(DownloadTask.updated_at.desc()).limit(30).all()
-    return success_response(data={
-        'waiting': [t.to_dict() for t in waiting],
-        'downloading': [t.to_dict() for t in downloading],
-        'done': [t.to_dict() for t in done],
-    })
+
+    items = []
+
+    scrape_tasks = ScrapeTask.query.order_by(ScrapeTask.created_at.desc()).limit(50).all()
+    download_tasks = DownloadTask.query.order_by(DownloadTask.created_at.desc()).limit(50).all()
+
+    # 标题兜底：任务未写入标题（历史任务/详情获取前失败）时用已入库漫画名
+    comic_ids = {t.comic_id for t in scrape_tasks + download_tasks if t.comic_id}
+    comic_titles = {}
+    if comic_ids:
+        from app.models import Comic
+        comic_titles = {c.id: c.title for c in
+                        Comic.query.filter(Comic.id.in_(comic_ids)).all()}
+
+    for t in scrape_tasks:
+        pct = round(t.progress / t.total * 100, 1) if t.total else 0.0
+        items.append({
+            'type': 'scrape',
+            'id': t.id,
+            'title': t.title or comic_titles.get(t.comic_id) or t.url,
+            'url': t.url,
+            'source': t.source,
+            'status': t.status,
+            'message': t.message,
+            'progress': t.progress,
+            'total': t.total,
+            'progress_pct': pct,
+            'comic_id': t.comic_id,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+            'updated_at': t.updated_at.isoformat() if t.updated_at else None,
+        })
+
+    for t in download_tasks:
+        items.append({
+            'type': 'download',
+            'id': t.id,
+            'title': t.title or comic_titles.get(t.comic_id) or t.url,
+            'url': t.url,
+            'status': t.status,
+            'message': t.message,
+            'qb_state': t.qb_state,
+            'progress_pct': t.qb_progress,
+            'comic_id': t.comic_id,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+            'updated_at': t.updated_at.isoformat() if t.updated_at else None,
+        })
+
+    # 稳定排序两步：先各自时间倒序，再按"进行中在前、结束态在后"分组
+    items.sort(key=lambda i: (i['updated_at'] or i['created_at'] or ''), reverse=True)
+    items.sort(key=lambda i: i['status'] in ('done', 'error', 'failed'))
+    return success_response(data={'items': items})
 
 
-@bp.route('/progress', methods=['GET'])
-def get_progress():
-    DownloadService.update_download_progress()
-    tasks = DownloadTask.query.filter(
-        DownloadTask.queue == 'downloading',
-        DownloadTask.status.in_(['downloading', 'importing', 'matching', 'done', 'error'])
-    ).all()
-    return success_response(data=[t.to_dict() for t in tasks])
+@bp.route('/tasks/<task_type>/<task_id>', methods=['DELETE'])
+def delete_unified_task(task_type, task_id):
+    """统一下载列表删除：scrape=图片抓取任务，download=种子任务。"""
+    from app.models import ScrapeTask
+
+    if task_type == 'scrape':
+        task = ScrapeTask.query.get(task_id)
+        if not task:
+            return error_response(ErrorCode.NOT_FOUND, '抓取任务不存在')
+        if task.status in ('pending', 'running'):
+            # 取消而非拒绝删除：卡死/误触的任务只能靠重启服务解锁，
+            # 队列会被一直占住。标记终态后，运行中的抓取协程会在下一个
+            # 进度上报点被终态守卫协作终止（_update_task 抛 TaskCancelled）；
+            # 已下载页保留在续传目录，重发同一画廊可续传。
+            task.status = 'failed'
+            task.message = '已手动取消；重新发起同一画廊可续传'
+            db.session.commit()
+            return success_response(message='抓取任务已取消')
+        db.session.delete(task)
+        db.session.commit()
+        return success_response(message='抓取任务已删除')
+
+    if task_type == 'download':
+        task = DownloadTask.query.get(task_id)
+        if not task:
+            return error_response(ErrorCode.NOT_FOUND, '下载任务不存在')
+        DownloadService.delete_task(task)
+        return success_response(message='下载任务已删除')
+
+    return error_response(ErrorCode.BAD_REQUEST, f'未知任务类型: {task_type}')
 
 
 @bp.route('/<task_id>', methods=['GET'])

@@ -19,18 +19,102 @@ class NhentaiScraper(BaseScraper):
         if source_url:
             result['source_url'] = source_url
 
+        # 优先：SvelteKit 新版内嵌 JSON（完整元数据）
+        gallery = self._extract_sveltekit_json(html_content)
+        if gallery:
+            self._fill_from_sveltekit(gallery, result, html_content)
+
+        # 兼容旧版 HTML 解析（字段仅在未填充时补充）
         self._parse_title(html_content, result)
         self._parse_cover(html_content, result)
         self._parse_source_url(html_content, result, source_url)
-        self._parse_tags(html_content, result)
+        if not gallery:
+            self._parse_tags(html_content, result)
         self._parse_favorites(html_content, result)
         self._parse_download(html_content, result)
 
-        if not self._has_tags_section(html_content):
+        if not gallery and not self._has_tags_section(html_content):
             self._fallback_api(html_content, result)
 
         decode_html_entities(result)
         return result
+
+    def _extract_sveltekit_json(self, html_content):
+        """从 SvelteKit 画廊页提取内嵌 gallery JSON（script 的 body 字段）。"""
+        import json as _json
+        for script in re.findall(r'<script[^>]*>(.*?)</script>', html_content, re.DOTALL):
+            if 'media_id' not in script:
+                continue
+            try:
+                outer = _json.loads(script)
+            except (ValueError, TypeError):
+                continue
+            body = outer.get('body') if isinstance(outer, dict) else None
+            if isinstance(body, str):
+                try:
+                    body = _json.loads(body)
+                except (ValueError, TypeError):
+                    continue
+            if isinstance(body, dict) and 'media_id' in body:
+                return body
+        return None
+
+    def _fill_from_sveltekit(self, g, result, html_content):
+        """用内嵌 JSON 填充元数据。"""
+        title = g.get('title') or {}
+        if title.get('english'):
+            result['title'] = title['english']
+        if title.get('japanese'):
+            result['title_jp'] = title['japanese']
+        if g.get('num_pages'):
+            result['page_count'] = g['num_pages']
+        if g.get('num_favorites') is not None:
+            result['favorited'] = g['num_favorites']
+        if g.get('upload_date'):
+            try:
+                result['date'] = _dt.utcfromtimestamp(int(g['upload_date'])).strftime('%Y-%m-%d')
+            except (ValueError, OSError, OverflowError):
+                pass
+
+        # 封面：og:image 优先（完整 URL），否则由 cover.path 拼
+        if not result.get('cover_url'):
+            og_image = re.search(r'property="og:image"\s+content="([^"]+)"', html_content)
+            if og_image:
+                result['cover_url'] = og_image.group(1).strip()
+            elif isinstance(g.get('cover'), dict) and g['cover'].get('path'):
+                result['cover_url'] = f"https://t.nhentai.net/{g['cover']['path']}"
+
+        tags = []
+        for tag in g.get('tags', []):
+            t_type = (tag.get('type') or '').strip()
+            t_name = (tag.get('name') or '').strip()
+            if not t_name:
+                continue
+            if t_type == 'artist':
+                result['author'] = t_name
+                tags.append(f'artist:{t_name}')
+            elif t_type == 'language':
+                nl = t_name.lower()
+                if nl == 'chinese':
+                    result['language'] = 'Chinese'
+                elif nl == 'translated':
+                    result['is_translated'] = True
+                elif nl == 'english':
+                    result['language'] = result.get('language', 'English')
+                elif nl == 'japanese' and not result.get('language'):
+                    result['language'] = 'Japanese'
+                tags.append(f'language:{t_name}')
+            elif t_type == 'category':
+                result['category'] = t_name.capitalize()
+                tags.append(f'category:{t_name}')
+            elif t_type:
+                tags.append(f'{t_type}:{t_name}')
+        if tags:
+            self._append_tags(result, tags)
+        if result.get('page_count'):
+            self._append_tags(result, [f"pages:{result['page_count']}"])
+        if result.get('date'):
+            self._append_tags(result, [f"uploaded:{result['date']}"])
 
     def _parse_title(self, html_content, result):
         h1_match = re.search(r'<h1\s+class="title">(.*?)</h1>', html_content, re.DOTALL)

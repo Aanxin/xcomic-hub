@@ -16,9 +16,18 @@ def safe_filename(filename):
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
     name = name.strip()
     if len(name.encode('utf-8')) > 240:
-        while len(name.encode('utf-8')) > 240 and name:
-            name = name[:-1]
-        name = name.rstrip('_').rstrip()
+        # 超长名截断主干、保留扩展名：阅读器按扩展名识别 ZIP/图片格式，
+        # 截掉扩展名会导致上传后无法打开
+        stem, dot, ext = name.rpartition('.')
+        if stem and dot and len(ext.encode('utf-8')) <= 16:
+            max_stem = 240 - len(ext.encode('utf-8')) - 1
+            while len(stem.encode('utf-8')) > max_stem and stem:
+                stem = stem[:-1]
+            name = f"{stem.rstrip('_').rstrip()}.{ext}"
+        else:
+            while len(name.encode('utf-8')) > 240 and name:
+                name = name[:-1]
+            name = name.rstrip('_').rstrip()
     if not name:
         return ''
     return name

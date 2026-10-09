@@ -17,7 +17,9 @@
 - **收藏与历史** - 收藏喜欢的漫画，记录阅读进度
 
 ### 采集功能
-- **网页采集** - 支持 E-Hentai、Nhentai 等网站的信息自动采集
+- **漫画源浏览** - 内置 E-Hentai / Nhentai 源浏览：首页 / 订阅 / 热门 / 排行大类，语言筛选与热度排序
+- **精确标签搜索** - 点击画廊标签按源站精确语法搜索（对齐站点点击标签的语义），关键词搜索照常宽松匹配
+- **整本抓取** - 从漫画源一键抓取整本图片入库：断点续传、失败页补试、坏节点自动切换、任务取消与卡死看门狗
 - **种子下载** - 集成 qBittorrent，支持磁力链接和种子文件下载
 - **批量导入** - 支持文件夹批量导入漫画
 
@@ -201,8 +203,8 @@ Authorization: Bearer <access_token>
 | `/api/v1/comics` | 漫画管理（列表、详情、CRUD） |
 | `/api/v1/collections` | 合集管理 |
 | `/api/v1/uploads` | 文件上传（支持分片、断点续传） |
-| `/api/v1/downloads` | 下载任务管理 |
-| `/api/v1/scraper` | 采集接口 |
+| `/api/v1/downloads` | 下载任务管理（含抓取任务取消） |
+| `/api/v1/sources` | 漫画源浏览 / 搜索 / 画廊详情 / 整本抓取 / 图片代理 |
 | `/api/v1/tags` | 标签管理 |
 | `/api/v1/history` | 阅读历史 |
 | `/api/v1/settings` | 系统设置 |
@@ -249,11 +251,11 @@ Authorization: Bearer <access_token>
 1. **网页上传** - 点击「上传漫画」按钮，选择文件上传
 2. **API 上传** - 使用分片上传接口，支持大文件
 
-### Q: 如何采集漫画信息？
+### Q: 如何从漫画源抓取漫画？
 
-1. 访问设置页面，配置代理（如果需要）
-2. 在下载页面输入 E-Hentai/Nhentai 页面 URL
-3. 系统自动采集信息并下载种子
+1. 访问设置页面，配置代理与站点 Cookie（如果需要）
+2. 进入「浏览」页选择源（E-Hentai / Nhentai），按大类浏览或搜索、点击标签精确搜索
+3. 打开画廊详情，点击「抓取整本入库」，进度在「下载」页查看，支持取消与断点续传
 
 ### Q: 如何连接安卓客户端？
 
@@ -263,36 +265,43 @@ Authorization: Bearer <access_token>
 
 ## 开发
 
-### 添加新的采集器
+### 添加新的漫画源
+
+漫画源实现 `BaseSource` 插件接口（搜索 / 列表 / 画廊详情 / 全部原图）：
 
 ```python
-# app/scrapers/my_scraper.py
-from app.scrapers.base_scraper import BaseScraper
+# app/sources/my_source.py
+from app.sources.base_source import BaseSource, GalleryListResult
 
-class MyScraper(BaseScraper):
-    name = "mysite"
-    base_url = "https://example.com"
+class MySource(BaseSource):
+    source_id = 'mysite'
+    name = 'MySite'
+    domains = ('mysite.com',)   # URL 自动识别归属源
 
-    def parse_gallery(self, html):
-        # 解析画廊页面
-        pass
+    def search(self, keyword, page=1, language=None, cursor=None, sort=None,
+               exact_tag=False) -> GalleryListResult:
+        ...  # exact_tag=True 时用站点精确 tag 语法
 
-    def get_image_urls(self, html):
-        # 获取图片 URL
-        pass
+    def latest(self, page=1, language=None, cursor=None, sort=None) -> GalleryListResult:
+        ...
+
+    def gallery_details(self, url) -> dict:
+        ...  # 元数据 + tags（逗号串，分组与翻译由服务层附加）
+
+    def page_image_urls(self, url, progress_cb=None) -> list:
+        ...  # progress_cb(done, total) 上报解析进度
 ```
 
-### 注册采集器
+### 注册漫画源
 
 ```python
-# app/scrapers/scraper_factory.py
-from app.scrapers.my_scraper import MyScraper
+# app/sources/source_registry.py
+from app.sources.my_source import MySource
 
-SCRAPER_REGISTRY = {
-    "mysite": MyScraper,
-    # ...
-}
+_registry.register(MySource())
 ```
+
+注册后浏览页与 `/api/v1/sources/*` 接口自动可用。
 
 ## License
 

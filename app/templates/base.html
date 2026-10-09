@@ -681,6 +681,9 @@
                         <a class="nav-link {{ 'active' if request.endpoint == 'main.index' else '' }}" href="{{ url_for('main.index') }}"><i class="bi bi-grid"></i> 漫画库</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.endpoint == 'main.browse' else '' }}" href="{{ url_for('main.browse') }}"><i class="bi bi-globe2"></i> 浏览</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {{ 'active' if request.endpoint == 'main.upload' else '' }}" href="{{ url_for('main.upload') }}"><i class="bi bi-cloud-upload"></i> 上传</a>
                     </li>
                     <li class="nav-item">

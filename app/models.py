@@ -46,7 +46,7 @@ class Comic(db.Model):
     category = db.Column(db.String(64), default='')
     date = db.Column(db.String(32), default='')
     plot = db.Column(db.Text, default='')
-    rating = db.Column(db.Float, default=0.0)
+    rating = db.Column(db.Float, default=0.0, index=True)
     rating_count = db.Column(db.Integer, default=0)
     tags = db.Column(db.String(256), default='')
     status = db.Column(db.String(32), default='')
@@ -55,18 +55,19 @@ class Comic(db.Model):
     is_translated = db.Column(db.Boolean, default=False)
     uploader = db.Column(db.String(128), default='')
     page_count = db.Column(db.Integer, default=0)
+    # deprecated: 遗留整型收藏位，仅保留 to_dict 输出兼容旧客户端；收藏请用 is_favorite
     favorited = db.Column(db.Integer, default=0)
-    source_url = db.Column(db.String(512), default='')
+    source_url = db.Column(db.String(512), default='', index=True)
     torrent_urls = db.Column(db.Text, default='')
     cover = db.Column(db.String(512), default='')
     filename = db.Column(db.String(512), default='')
     nfo_file = db.Column(db.String(512), default='')
-    file_size = db.Column(db.BigInteger, default=0)
-    collection_id = db.Column(db.Integer, db.ForeignKey('collections.id'), nullable=True)
+    file_size = db.Column(db.BigInteger, default=0, index=True)
+    collection_id = db.Column(db.Integer, db.ForeignKey('collections.id'), nullable=True, index=True)
     volume = db.Column(db.String(64), default='')
     is_favorite = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
     reading_history = db.relationship('ReadingHistory', backref='comic', uselist=False, cascade='all, delete-orphan')
 
@@ -305,4 +306,36 @@ class DownloadTask(db.Model):
             'comic_id': self.comic_id,
             'queue': self.queue,
             'time': self.created_at.strftime('%H:%M:%S') if self.created_at else '',
+        }
+
+
+class ScrapeTask(db.Model):
+    """源浏览抓取任务：从漫画源下载整本图片并入库。"""
+    __tablename__ = 'scrape_tasks'
+
+    id = db.Column(db.String(32), primary_key=True)
+    source = db.Column(db.String(32), default='')
+    url = db.Column(db.String(1024), default='')
+    title = db.Column(db.String(512), default='')
+    status = db.Column(db.String(20), default='pending')
+    message = db.Column(db.String(512), default='')
+    progress = db.Column(db.Integer, default=0)
+    total = db.Column(db.Integer, default=0)
+    comic_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source': self.source,
+            'url': self.url,
+            'title': self.title,
+            'status': self.status,
+            'message': self.message,
+            'progress': self.progress,
+            'total': self.total,
+            'comic_id': self.comic_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

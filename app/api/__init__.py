@@ -10,6 +10,7 @@ from app.api.history import bp as history_bp
 from app.api.stats import bp as stats_bp
 from app.api.covers import bp as covers_bp
 from app.api.tags import bp as tags_bp
+from app.api.sources import bp as sources_bp
 
 
 api_bp = Blueprint('api_v1', __name__, url_prefix='/api/v1')
@@ -27,6 +28,7 @@ def register_api_blueprints(app):
     app.register_blueprint(stats_bp)
     app.register_blueprint(covers_bp)
     app.register_blueprint(tags_bp)
+    app.register_blueprint(sources_bp)
 
     @app.route('/api/v1/')
     def api_v1_index():

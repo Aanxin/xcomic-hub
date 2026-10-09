@@ -78,9 +78,10 @@
 
 <script>
 function toggleColFavorite(btn, colId) {
-    fetch('/api/collection/' + colId + '/favorite', {method: 'POST'})
+    fetch('/api/v1/collections/' + colId + '/favorite', {method: 'POST'})
         .then(r => r.json())
-        .then(data => {
+        .then(resp => {
+            const data = resp.data || {};
             const icon = btn.querySelector('i');
             if (data.is_favorite) {
                 btn.className = 'btn btn-danger btn-sm';

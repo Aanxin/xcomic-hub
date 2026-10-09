@@ -5,9 +5,9 @@ from app.services.comic_service import ComicService
 from app.services.comic_query_service import ComicQueryService
 from app.services.comic_data_enricher import ComicDataEnricher
 from app.services.nfo_service import NfoService
-from app.reader import get_comic_pages, get_page_dir, is_readable, cleanup_pages
+from app.reader import get_comic_pages, get_page_dir, is_readable, cleanup_pages, start_extraction_async, get_extraction_status, cancel_extraction
 from app.nfo_parser import generate_nfo
-from app.utils.file_utils import group_tags
+from app.utils.file_utils import group_tags, safe_filename
 from app.utils.tag_utils import reverse_map_tag
 from app.api.utils import success_response, error_response, ErrorCode, paginate_response
 from app.api.auth import optional_device
@@ -175,17 +175,87 @@ def get_pages(comic_id):
     comic = Comic.query.get(comic_id)
     if not comic:
         return error_response(ErrorCode.NOT_FOUND, '漫画不存在')
+
     pages = get_comic_pages(comic_id, comic.filename)
-    if not pages:
-        return error_response(ErrorCode.NOT_FOUND, '无法读取漫画页面')
+    if pages:
+        history = ReadingHistory.query.filter_by(comic_id=comic_id).first()
+        last_page = history.last_page if history else 1
+        return success_response(data={
+            'comic_id': comic_id,
+            'status': 'ready',
+            'pages': pages,
+            'total_pages': len(pages),
+            'last_page': last_page,
+        })
+
+    status = start_extraction_async(comic_id, comic.filename)
+    if status.get('status') == 'error':
+        return error_response(ErrorCode.BAD_REQUEST, status.get('message', '无法读取漫画页面'))
+
     history = ReadingHistory.query.filter_by(comic_id=comic_id).first()
     last_page = history.last_page if history else 1
-    return success_response(data={
-        'comic_id': comic_id,
-        'pages': pages,
-        'total_pages': len(pages),
-        'last_page': last_page,
-    })
+    return success_response(
+        data={
+            'comic_id': comic_id,
+            'status': status.get('status', 'extracting'),
+            'progress': status.get('progress', 0),
+            'total': status.get('total', 0),
+            'message': status.get('message', ''),
+            'pages': [],
+            'total_pages': 0,
+            'last_page': last_page,
+        },
+        message='正在解压，请稍候',
+        status_code=202,
+    )
+
+
+@bp.route('/<int:comic_id>/extraction-status', methods=['GET'])
+def extraction_status(comic_id):
+    comic = Comic.query.get(comic_id)
+    if not comic:
+        return error_response(ErrorCode.NOT_FOUND, '漫画不存在')
+
+    pages = get_comic_pages(comic_id, comic.filename)
+    if pages:
+        return success_response(data={
+            'comic_id': comic_id,
+            'status': 'ready',
+            'progress': len(pages),
+            'total': len(pages),
+            'pages': pages,
+            'total_pages': len(pages),
+        })
+
+    status = get_extraction_status(comic_id)
+    if not status:
+        status = start_extraction_async(comic_id, comic.filename)
+
+    if status.get('status') == 'error':
+        return error_response(ErrorCode.BAD_REQUEST, status.get('message', '解压失败'))
+
+    return success_response(
+        data={
+            'comic_id': comic_id,
+            'status': status.get('status', 'extracting'),
+            'progress': status.get('progress', 0),
+            'total': status.get('total', 0),
+            'message': status.get('message', ''),
+            'pages': [],
+            'total_pages': 0,
+        },
+        message='正在解压，请稍候',
+        status_code=202,
+    )
+
+
+@bp.route('/<int:comic_id>/extraction-cancel', methods=['POST'])
+def extraction_cancel(comic_id):
+    """取消正在进行的解压任务。"""
+    cancelled = cancel_extraction(comic_id)
+    if not cancelled:
+        return error_response(ErrorCode.NOT_FOUND, '没有正在进行的解压任务')
+    return success_response(message='解压任务已取消')
 
 
 @bp.route('/<int:comic_id>/page/<page_filename>', methods=['GET'])
@@ -249,7 +319,9 @@ def download_comic(comic_id):
     file_path = os.path.join(COMICS_DIR, comic.filename)
     if not os.path.exists(file_path):
         return error_response(ErrorCode.NOT_FOUND, '文件不存在')
-    download_name = comic.title + os.path.splitext(comic.filename)[1]
+    # 截断+清理下载名：客户端文件系统对单文件名有限制（ext4 255 字节），
+    # 超长原始名会导致浏览器保存失败
+    download_name = safe_filename(comic.title + os.path.splitext(comic.filename)[1]) or os.path.basename(file_path)
     return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path),
                                as_attachment=True, download_name=download_name)
 
@@ -378,23 +450,27 @@ def check_titles():
         if c[1]:
             db_pairs.append((_normalize_title(c[1]), c[1]))
 
-    matches = {}
+    found = []
+    not_found = []
     for title in titles:
         norm = _normalize_title(title)
-        if not norm or len(norm) < 2:
-            continue
-        best = None
-        best_len = 0
-        for db_norm, db_title in db_pairs:
-            if norm == db_norm:
-                best = db_title
-                best_len = len(db_norm)
-                break
-            if len(norm) >= 4 and (norm in db_norm or db_norm in norm):
-                if len(db_norm) > best_len:
-                    best = db_title
+        matched = None
+        if norm and len(norm) >= 2:
+            best_len = 0
+            for db_norm, db_title in db_pairs:
+                if norm == db_norm:
+                    matched = db_title
                     best_len = len(db_norm)
-        if best:
-            matches[norm] = best
+                    break
+                if len(norm) >= 4 and (norm in db_norm or db_norm in norm):
+                    if len(db_norm) > best_len:
+                        matched = db_title
+                        best_len = len(db_norm)
+        if matched is not None:
+            found.append(title)
+        else:
+            not_found.append(title)
 
-    return success_response(data={'matches': matches})
+    # 与 API_DOC.md 3.16 对齐：返回 found / not_found（请求原始标题），
+    # 旧版返回 {'matches': {归一化标题: 库内标题}} 无调用方依赖，直接替换。
+    return success_response(data={'found': found, 'not_found': not_found})

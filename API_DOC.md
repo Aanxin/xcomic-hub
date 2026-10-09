@@ -20,8 +20,9 @@
 10. [统计模块](#10-统计模块)
 11. [标签模块](#11-标签模块)
 12. [封面模块](#12-封面模块)
-13. [错误码说明](#13-错误码说明)
-14. [附录：安卓端集成指南](#14-附录安卓端集成指南)
+13. [漫画源浏览模块](#13-漫画源浏览模块)
+14. [错误码说明](#14-错误码说明)
+15. [附录：安卓端集成指南](#15-附录安卓端集成指南)
 
 ---
 
@@ -655,10 +656,56 @@ Authorization: Bearer <device_token>
     "comic_id": 1,
     "pages": ["0001.jpg", "0002.jpg", "0003.jpg"],
     "total_pages": 24,
-    "last_page": 10
+    "last_page": 10,
+    "status": "ready"
   }
 }
 ```
+
+**解压中（HTTP 202）**:
+
+漫画为压缩包且尚未解压时，服务端自动启动解压并立即返回 HTTP 202
+（响应体 code=0），此时 `pages` 为空数组，应轮询 3.8.1 直至 `status=ready`：
+
+```json
+{
+  "code": 0,
+  "message": "正在解压，请稍候",
+  "data": {
+    "comic_id": 1,
+    "pages": [],
+    "total_pages": 0,
+    "status": "extracting",
+    "progress": 12,
+    "total": 120,
+    "message": "正在解压，请稍候"
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | string/null | `ready`=已就绪；`extracting`=解压中（HTTP 202）；`error`=解压失败 |
+| progress | int/null | 解压中：已处理页数 |
+| total | int/null | 解压中：总页数 |
+| message | string/null | 状态描述文本 |
+
+### 3.8.1 获取解压状态
+
+- **接口名称**: 轮询漫画解压状态
+- **请求URL**: `GET /comics/{comic_id}/extraction-status`
+- **认证级别**: 无需认证
+- **说明**: 响应结构与 3.8 相同。解压中返回 HTTP 202（`status=extracting`）；
+  完成时返回 HTTP 200 且 `status=ready`，并附带完整 `pages`/`total_pages`；
+  失败时 `status=error` 且 `message` 携带原因。
+
+### 3.8.2 取消解压
+
+- **接口名称**: 取消漫画解压
+- **请求URL**: `POST /comics/{comic_id}/extraction-cancel`
+- **认证级别**: 无需认证
+- **说明**: 取消进行中的解压任务（正在阅读/已完成的漫画服务端会拒绝）。
+  响应 `message` 为操作结果文本。
 
 ### 3.9 获取漫画页面图片
 
@@ -725,6 +772,8 @@ Glide.with(context).load(pageUrl).into(imageView)
 }
 ```
 
+> **说明**: 服务器不自动递增 `read_count`（首次创建记录时置 1），之后仅更新 `last_page`/`total_pages`/`last_read_at`。
+
 **响应示例**:
 
 ```json
@@ -735,7 +784,7 @@ Glide.with(context).load(pageUrl).into(imageView)
     "comic_id": 1,
     "last_page": 15,
     "total_pages": 24,
-    "read_count": 4,
+    "read_count": 3,
     "last_read_at": "2024-01-16T08:00:00"
   }
 }
@@ -1344,92 +1393,12 @@ Glide.with(context).load(pageUrl).into(imageView)
 
 ---
 
-## 6. 下载模块
+## 6. 下载模块（统一下载任务）
 
-### 6.1 创建下载任务
+> 下载列表合并展示两类任务：`type=download` 的种子下载任务（由 PC 端创建）与
+> `type=scrape` 的漫画源图片抓取任务（由安卓端 `POST /sources/scrape` 创建，见 13.6）。
 
-- **接口名称**: 通过URL创建下载任务
-- **请求URL**: `POST /downloads/start`
-- **认证级别**: 无需认证
-
-**请求参数**:
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| url | string | 是 | 下载页面URL（需以http://或https://开头） |
-
-**请求示例**:
-
-```json
-{
-  "url": "https://e-hentai.org/g/12345/abcdef"
-}
-```
-
-**响应示例**:
-
-```json
-{
-  "code": 0,
-  "message": "下载任务已创建",
-  "data": {
-    "id": "a1b2c3d4",
-    "url": "https://e-hentai.org/g/12345/abcdef",
-    "title": "",
-    "status": "pending",
-    "message": "等待队列中...",
-    "torrent_urls": [],
-    "torrent_file": "",
-    "nfo_path": "",
-    "qb_progress": 0.0,
-    "qb_state": "",
-    "comic_id": null,
-    "queue": "waiting",
-    "time": "12:00:00"
-  }
-}
-```
-
-### 6.2 上传种子文件
-
-- **接口名称**: 通过种子文件创建下载任务
-- **请求URL**: `POST /downloads/torrent`
-- **认证级别**: 无需认证
-- **Content-Type**: `multipart/form-data`
-
-**请求参数**:
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| torrent_file | file | 是 | .torrent 文件 |
-| url | string | 否 | 来源URL |
-| title | string | 否 | 标题 |
-
-**响应示例**:
-
-```json
-{
-  "code": 0,
-  "message": "种子文件已上传",
-  "data": {
-    "id": "e5f6g7h8",
-    "url": "",
-    "title": "漫画标题",
-    "status": "pending",
-    "message": "等待队列中...",
-    "torrent_urls": [],
-    "torrent_file": "filename.torrent",
-    "nfo_path": "",
-    "qb_progress": 0.0,
-    "qb_state": "",
-    "comic_id": null,
-    "queue": "waiting",
-    "time": "12:00:00"
-  }
-}
-```
-
-### 6.3 获取下载任务列表
+### 6.1 获取下载任务列表
 
 - **接口名称**: 获取所有下载任务
 - **请求URL**: `GET /downloads/tasks`
@@ -1442,116 +1411,91 @@ Glide.with(context).load(pageUrl).into(imageView)
   "code": 0,
   "message": "操作成功",
   "data": {
-    "waiting": [
+    "items": [
       {
-        "id": "a1b2c3d4",
-        "url": "https://...",
-        "title": "",
-        "status": "pending",
-        "message": "等待队列中...",
-        "torrent_urls": [],
-        "torrent_file": "",
-        "nfo_path": "",
-        "qb_progress": 0.0,
-        "qb_state": "",
+        "type": "scrape",
+        "id": "a3f9c2d4b5e6789012345678abcdef01",
+        "title": "[LemonFont] Shapeshifter Part 1-3",
+        "url": "https://e-hentai.org/g/596447/3894f02c20/",
+        "source": "ehentai",
+        "status": "running",
+        "message": "正在下载 25/345",
+        "qb_state": null,
+        "progress": 25,
+        "total": 345,
+        "progress_pct": 7.2,
         "comic_id": null,
-        "queue": "waiting",
-        "time": "12:00:00"
-      }
-    ],
-    "downloading": [
+        "created_at": "2024-01-15 12:00:00",
+        "updated_at": "2024-01-15 12:03:00"
+      },
       {
-        "id": "e5f6g7h8",
-        "url": "https://...",
+        "type": "download",
+        "id": "5f1e8a2b-9c3d-4e7f-a0b1-c2d3e4f5a6b7",
         "title": "漫画标题",
+        "url": "https://e-hentai.org/g/12345/abcdef",
+        "source": null,
         "status": "downloading",
-        "message": "下载中",
-        "torrent_urls": ["magnet:?xt=..."],
-        "torrent_file": "",
-        "nfo_path": "",
-        "qb_progress": 45.2,
+        "message": "",
         "qb_state": "downloading",
+        "progress": null,
+        "total": null,
+        "progress_pct": 45.2,
         "comic_id": null,
-        "queue": "downloading",
-        "time": "12:05:00"
-      }
-    ],
-    "done": [
-      {
-        "id": "i9j0k1l2",
-        "url": "https://...",
-        "title": "已完成漫画",
-        "status": "done",
-        "message": "导入完成",
-        "torrent_urls": [],
-        "torrent_file": "",
-        "nfo_path": "",
-        "qb_progress": 100.0,
-        "qb_state": "",
-        "comic_id": 5,
-        "queue": "downloading",
-        "time": "11:30:00"
+        "created_at": "2024-01-15 11:30:00",
+        "updated_at": "2024-01-15 12:05:00"
       }
     ]
   }
 }
 ```
 
-### 6.4 获取下载进度
+**字段说明**:
 
-- **接口名称**: 获取正在下载的任务进度
-- **请求URL**: `GET /downloads/progress`
-- **认证级别**: 无需认证
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 任务类型：`scrape`=漫画源图片抓取，`download`=种子下载 |
+| id | string | 任务ID（同一 type 内唯一，删除时需同时提供 type）。`scrape` 为 32 位十六进制串，`download` 为 UUID，**勿按数字解析** |
+| title | string | 任务标题（可能为空，抓取任务由采集结果填充） |
+| url | string | 来源页面地址 |
+| source | string/null | 仅抓取任务：漫画源标识（如 `ehentai`） |
+| status | string | 任务状态，见下方状态说明 |
+| message | string | 状态描述文本 |
+| qb_state | string/null | 仅种子任务：qBittorrent 原生状态（downloading/forcedDL/metaDL/seeding 等） |
+| progress | int/null | 仅抓取任务：已处理张数 |
+| total | int/null | 仅抓取任务：总张数 |
+| progress_pct | float/null | 统一进度百分比 0~100（服务端计算，两类任务通用） |
+| comic_id | int/null | 任务完成入库后的漫画ID，可用于打开详情 |
+| created_at | string | 创建时间 |
+| updated_at | string | 最后更新时间 |
 
-**响应示例**:
+**status 可能值**:
 
-```json
-{
-  "code": 0,
-  "message": "操作成功",
-  "data": [
-    {
-      "id": "e5f6g7h8",
-      "url": "https://...",
-      "title": "漫画标题",
-      "status": "downloading",
-      "message": "下载中",
-      "torrent_urls": ["magnet:?xt=..."],
-      "torrent_file": "",
-      "nfo_path": "",
-      "qb_progress": 45.2,
-      "qb_state": "downloading",
-      "comic_id": null,
-      "queue": "downloading",
-      "time": "12:05:30"
-    }
-  ]
-}
-```
+| 状态 | 说明 |
+|------|------|
+| pending / queued / waiting | 等待中 |
+| running | 进行中（scrape=抓取中，download=下载中） |
+| downloading / forceddl / metadl / stalleddl / checkingdl / allocating | 种子任务透传的 qBittorrent 下载中状态 |
+| checkingup / stalledup / forcedup / seeding | 种子任务透传的 qBittorrent 做种中状态 |
+| paused / pausedup / pauseddl | 已暂停 |
+| done / completed | 已完成（入库成功） |
+| error / failed | 失败 |
+| cancelled / canceled | 已取消 |
 
-### 6.5 获取单个下载任务
+> 终态为 `done/completed/error/failed/cancelled/canceled`，其余状态视为进行中。
 
-- **接口名称**: 获取下载任务详情
-- **请求URL**: `GET /downloads/{task_id}`
-- **认证级别**: 无需认证
-
-**路径参数**:
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| task_id | string | 是 | 下载任务ID |
-
-### 6.6 删除下载任务
+### 6.2 删除下载任务
 
 - **接口名称**: 删除下载任务
-- **请求URL**: `DELETE /downloads/{task_id}`
+- **请求URL**: `DELETE /downloads/tasks/{task_type}/{task_id}`
 - **认证级别**: 无需认证
+- **说明**: 仅终态任务可删除，进行中任务服务端会拒绝
 
 **路径参数**:
 
 | 参数名 | 类型 | 必填 | 说明 |
 |--------|------|------|------|
-| task_id | string | 是 | 下载任务ID |
+| task_type | string | 是 | 任务类型：scrape / download |
+| task_id | string | 是 | 任务ID |
 
 **响应示例**:
 
@@ -1559,53 +1503,6 @@ Glide.with(context).load(pageUrl).into(imageView)
 {
   "code": 0,
   "message": "下载任务已删除"
-}
-```
-
-**task status 可能值**:
-
-| 状态 | 说明 |
-|------|------|
-| pending | 等待中 |
-| scraping | 正在采集信息 |
-| saving_nfo | 保存NFO中 |
-| adding_torrent | 添加种子中 |
-| matching | 匹配已有漫画中 |
-| downloading | 下载中 |
-| importing | 导入中 |
-| done | 已完成 |
-| error | 出错 |
-| duplicate | 重复跳过 |
-
-### 6.7 保存下载NFO信息
-
-- **接口名称**: 保存下载过程中采集到的NFO信息
-- **请求URL**: `POST /downloads/nfo`
-- **认证级别**: 无需认证
-
-**请求参数**:
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| source_url | string | 否 | 来源URL |
-| title | string | 否 | 标题 |
-
-**请求示例**:
-
-```json
-{
-  "source_url": "https://e-hentai.org/g/12345/abcdef",
-  "title": "漫画标题"
-}
-```
-
-**响应示例**:
-
-```json
-{
-  "code": 0,
-  "message": "NFO信息已保存",
-  "data": { "nfo_path": "path/to/saved.nfo" }
 }
 ```
 
@@ -1705,6 +1602,7 @@ Glide.with(context).load(pageUrl).into(imageView)
     "proxy_port": "",
     "proxy_user": "",
     "proxy_pass": "******",
+    "proxy_bypass": "hath.network",
     "cookie_ehentai": "",
     "cookie_exhentai": "",
     "cookie_nhentai": "",
@@ -1739,7 +1637,8 @@ Glide.with(context).load(pageUrl).into(imageView)
   "proxy_enabled": "1",
   "proxy_type": "http",
   "proxy_host": "127.0.0.1",
-  "proxy_port": "7890"
+  "proxy_port": "7890",
+  "proxy_bypass": "hath.network"
 }
 ```
 
@@ -1800,6 +1699,7 @@ Glide.with(context).load(pageUrl).into(imageView)
 | proxy_port | string | 否 | 代理端口 |
 | proxy_user | string | 否 | 代理用户名 |
 | proxy_pass | string | 否 | 代理密码 |
+| proxy_bypass | string | 否 | 代理旁路域名后缀（逗号分隔），命中后直连不走代理，默认 `hath.network` |
 
 **响应示例**:
 
@@ -2115,7 +2015,9 @@ Glide.with(context).load(pageUrl).into(imageView)
       "page": 1,
       "per_page": 100,
       "total": 150,
-      "pages": 2
+      "pages": 2,
+      "has_prev": false,
+      "has_next": true
     }
   }
 }
@@ -2326,7 +2228,9 @@ GET /tags/big%20breasts/comics?page=1&per_page=20
       "page": 1,
       "per_page": 20,
       "total": 18,
-      "pages": 1
+      "pages": 1,
+      "has_prev": false,
+      "has_next": false
     }
   }
 }
@@ -2358,7 +2262,258 @@ Glide.with(context).load(coverUrl).into(imageView)
 
 ---
 
-## 13. 错误码说明
+## 13. 漫画源浏览模块
+
+> 对应前端 `/browse` 浏览页：先选择漫画源，再浏览/搜索画廊，查看详情并发起抓取入库。
+> 所有接口返回 JSON（图片代理除外），无需认证。
+
+### 13.1 获取漫画源列表
+
+- **接口名称**: 获取可用漫画源列表
+- **请求URL**: `GET /sources`
+- **认证级别**: 无需认证
+
+**响应示例**:
+
+```json
+{
+  "code": 0,
+  "message": "操作成功",
+  "data": [
+    {
+      "id": "ehentai",
+      "name": "E-Hentai",
+      "categories": [
+        {"id": "home", "name": "首页"},
+        {"id": "watched", "name": "订阅"},
+        {"id": "popular", "name": "热门"},
+        {"id": "toplist", "name": "排行"}
+      ]
+    },
+    {
+      "id": "nhentai",
+      "name": "Nhentai",
+      "categories": [{"id": "home", "name": "首页"}]
+    }
+  ]
+}
+```
+
+**字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 源标识（用于后续接口的 source_id） |
+| name | string | 源显示名称 |
+| categories | array | 源支持的浏览大类；仅一个大类时前端隐藏标签栏 |
+
+### 13.2 浏览列表（最新/大类）
+
+- **接口名称**: 按大类浏览画廊列表
+- **请求URL**: `GET /sources/{source_id}/latest`
+- **认证级别**: 无需认证
+
+**请求参数**:
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| page | int | 否 | 页码，从 1 开始（数字页码分页源使用） |
+| category | string | 否 | 大类：home（默认）/ watched / popular / toplist |
+| period | string | 否 | 排行时间范围：all（默认）/ day / month / year，仅 toplist 大类生效 |
+| language | string | 否 | 语言筛选，默认 chinese；all 表示不过滤 |
+| cursor | string | 否 | 游标分页（E-Hentai 新版 next= 参数），与 page 二选一，优先 cursor |
+| sort | string | 否 | 热度时间范围排序（Nhentai home 大类）：today（默认）/ week / all；不支持的源忽略该参数 |
+
+**响应示例**:
+
+```json
+{
+  "code": 0,
+  "message": "操作成功",
+  "data": {
+    "items": [
+      {
+        "url": "https://e-hentai.org/g/596447/3894f02c20/",
+        "title": "[LemonFont] Shapeshifter Part 1-3",
+        "cover_url": "https://ehgt.org/w/00/256/xxx.webp",
+        "page_count": 345,
+        "rank": 1,
+        "in_library": false
+      }
+    ],
+    "has_next": true,
+    "next_cursor": "4147836"
+  }
+}
+```
+
+**字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| items[].url | string | 画廊地址（后续详情/抓取接口的入参） |
+| items[].title | string | 标题 |
+| items[].cover_url | string | 封面缩略图地址（需经图片代理加载） |
+| items[].page_count | int | 页数，未知为 0 |
+| items[].rank | int | 排行名次，仅 toplist 大类，非排行为 0 |
+| items[].in_library | bool | 是否已在本地漫画库（按 Comic.source_url 匹配） |
+| has_next | bool | 是否有下一页 |
+| next_cursor | string | 下一页游标；空串表示该源使用数字页码（page=N）翻页 |
+
+**错误响应**:
+
+| 错误码 | 说明 |
+|--------|------|
+| 400 | 不支持的大类或时间范围 |
+| 404 | 未知漫画源 |
+
+### 13.3 搜索画廊
+
+- **接口名称**: 在指定源内搜索画廊
+- **请求URL**: `GET /sources/{source_id}/search`
+- **认证级别**: 无需认证
+
+**请求参数**:
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| keyword | string | 是 | 搜索关键词 |
+| page | int | 否 | 页码，从 1 开始 |
+| language | string | 否 | 语言筛选，默认 chinese；all 表示不过滤 |
+| cursor | string | 否 | 游标分页（E-Hentai） |
+| sort | string | 否 | 热度时间范围排序（Nhentai）：today/week/all，默认 today；不支持的源忽略该参数 |
+| exact_tag | string | 否 | 传 1/true 表示 keyword 为单个原始标签（如 female:glasses），源用其站点精确 tag 语法搜索（E-Hentai 引号+$，对齐站点 /tag/ 路由语义）；缺省为普通关键词搜索 |
+
+**响应示例**: 同 13.2（items / has_next / next_cursor 结构一致）。
+
+**错误响应**:
+
+| 错误码 | 说明 |
+|--------|------|
+| 400 | 缺少搜索关键词 |
+| 404 | 未知漫画源 |
+
+### 13.4 获取画廊详情
+
+- **接口名称**: 获取画廊结构化详情（自动识别源）
+- **请求URL**: `GET /sources/gallery`
+- **认证级别**: 无需认证
+
+**请求参数**:
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| url | string | 是 | 画廊地址（来自列表项的 url 字段） |
+
+**响应示例**:
+
+```json
+{
+  "code": 0,
+  "message": "操作成功",
+  "data": {
+    "title": "画廊标题",
+    "title_jp": "日文标题",
+    "category": "Manga",
+    "uploader": "上传者",
+    "rating": 4.85,
+    "tags": "language:chinese, female:catgirl, artist:xxx",
+    "page_count": 345,
+    "cover_url": "https://ehgt.org/xxx.jpg",
+    "upload_date": "2024-01-01 00:00",
+    "torrent_urls": "magnet:?xt=...",
+    "source_url": "https://e-hentai.org/g/xxx/yyy/",
+    "grouped_tags": [
+      {
+        "category": "语言",
+        "raw_category": "language",
+        "tags": ["中文"],
+        "raw_tags": ["chinese"]
+      }
+    ],
+    "uncat_tags": ["其他标签"]
+  }
+}
+```
+
+**字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| grouped_tags | array | 按命名空间分组的标签（含中文映射），用于详情弹窗分类展示 |
+| uncat_tags | array | 无命名空间的标签（已中文映射） |
+| 其余字段 | string/number | 由源的采集器解析，均可能缺失 |
+
+**错误响应**:
+
+| 错误码 | 说明 |
+|--------|------|
+| 400 | 缺少画廊地址 / 无法识别的画廊地址 |
+
+### 13.5 图片代理
+
+- **接口名称**: 代理加载源站图片（处理防盗链与 Cookie 墙）
+- **请求URL**: `GET /sources/image`
+- **认证级别**: 无需认证
+- **说明**: 封面/图片 URL 不能直接加载，需经此代理转发。返回图片二进制流，
+  响应头 `Cache-Control: public, max-age=86400`，安卓端可用 Glide/Coil 直接加载。
+
+**请求参数**:
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| url | string | 是 | 源站图片地址（白名单域名内的地址） |
+
+**错误响应**:
+
+| 错误码 | 说明 |
+|--------|------|
+| 400 | 缺少图片地址 / 不允许的图片地址（非白名单域名） |
+| 502 | 图片获取失败（HTTP 错误） |
+| 504 | 图片获取超时 |
+
+### 13.6 发起抓取入库
+
+- **接口名称**: 抓取整本画廊图片并入库（后台任务）
+- **请求URL**: `POST /sources/scrape`
+- **认证级别**: 无需认证
+- **说明**: 后台下载全部图片 → 打包 ZIP → 创建 Comic 入库。任务进度在
+  `/download` 下载列表页查看（`GET /downloads/tasks` 返回 type= scrape 的任务）。
+
+**请求参数**:
+
+```json
+{
+  "url": "https://e-hentai.org/g/596447/3894f02c20/"
+}
+```
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| url | string | 是 | 画廊地址（来自列表项的 url 字段） |
+
+**响应示例**:
+
+```json
+{
+  "code": 0,
+  "message": "操作成功",
+  "data": {
+    "task_id": "a1b2c3d4e5f6..."
+  }
+}
+```
+
+**错误响应**:
+
+| 错误码 | 说明 |
+|--------|------|
+| 400 | 缺少画廊地址 / 无法识别的画廊地址 |
+| 409 | 该画廊已有进行中的抓取任务 |
+
+---
+
+## 14. 错误码说明
 
 | 错误码 | 说明 |
 |--------|------|
@@ -2392,7 +2547,7 @@ Glide.with(context).load(coverUrl).into(imageView)
 
 ---
 
-## 14. 附录：安卓端集成指南
+## 15. 附录：安卓端集成指南
 
 ### 1. 设备连接与认证
 

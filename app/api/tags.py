@@ -63,6 +63,7 @@ def list_tags():
     start = (page - 1) * per_page
     end = start + per_page
     paged = results[start:end]
+    pages = (total + per_page - 1) // per_page
 
     return success_response(data={
         'items': paged,
@@ -70,7 +71,9 @@ def list_tags():
             'page': page,
             'per_page': per_page,
             'total': total,
-            'pages': (total + per_page - 1) // per_page,
+            'pages': pages,
+            'has_prev': page > 1,
+            'has_next': page < pages,
         }
     })
 
@@ -240,6 +243,7 @@ def get_tag_comics(tag_path):
     query = query.order_by(Comic.updated_at.desc())
     total = query.count()
     comics = query.offset((page - 1) * per_page).limit(per_page).all()
+    pages = (total + per_page - 1) // per_page
 
     return success_response(data={
         'items': [c.to_dict() for c in comics],
@@ -247,6 +251,8 @@ def get_tag_comics(tag_path):
             'page': page,
             'per_page': per_page,
             'total': total,
-            'pages': (total + per_page - 1) // per_page,
+            'pages': pages,
+            'has_prev': page > 1,
+            'has_next': page < pages,
         }
     })

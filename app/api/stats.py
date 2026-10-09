@@ -22,11 +22,10 @@ def get_stats():
     total_reading_records = reading_stats[0] or 0
     total_read_count = reading_stats[1] or 0
 
-    finished_count = 0
-    all_histories = ReadingHistory.query.all()
-    for h in all_histories:
-        if h.total_pages > 0 and h.last_page >= h.total_pages:
-            finished_count += 1
+    finished_count = ReadingHistory.query.filter(
+        ReadingHistory.total_pages > 0,
+        ReadingHistory.last_page >= ReadingHistory.total_pages,
+    ).count()
 
     downloading_tasks = DownloadTask.query.filter(
         DownloadTask.status.in_(['downloading', 'importing', 'matching', 'pending'])

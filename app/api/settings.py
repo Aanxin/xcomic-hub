@@ -3,101 +3,38 @@ import json
 from flask import Blueprint, request, Response
 from app import db
 from app.models import Setting, Comic
-from app.utils.proxy_utils import parse_proxy_url
+from app.services.settings_service import SettingsService
 from app.clients.qbittorrent_client import QbittorrentClient
 from app.clients.http_client import urlopen_native
 from app.api.utils import success_response, error_response, ErrorCode
-from app.api.auth import device_required
+from app.api.auth import optional_device
 
 bp = Blueprint('api_settings', __name__, url_prefix='/api/v1/settings')
 
 
 @bp.route('', methods=['GET'])
-@device_required
+@optional_device
 def get_settings():
-    keys = [
-        'site_name', 'per_page', 'max_content_length', 'chunk_size',
-        'upload_interval', 'auto_cover', 'cover_width', 'cover_quality',
-        'proxy_enabled', 'proxy_type', 'proxy_host', 'proxy_port',
-        'proxy_user', 'cookie_ehentai', 'cookie_exhentai', 'cookie_nhentai',
-        'qb_enabled', 'qb_host', 'qb_port', 'qb_user', 'qb_category',
-        'qb_download_path', 'tag_mapping',
-    ]
-    data = {}
-    for key in keys:
-        data[key] = Setting.get(key, '')
-    data['proxy_pass'] = '******' if Setting.get('proxy_pass', '') else ''
-    data['qb_pass'] = '******' if Setting.get('qb_pass', '') else ''
-    return success_response(data=data)
+    return success_response(data=SettingsService.get_all())
 
 
 @bp.route('', methods=['PUT'])
-@device_required
+@optional_device
 def update_settings():
     data = request.get_json(silent=True) or {}
     if not data:
         return error_response(ErrorCode.BAD_REQUEST, '无效数据')
 
-    int_fields = {
-        'per_page': (1, 100),
-        'max_content_length': (100, 51200),
-        'chunk_size': (1, 100),
-        'cover_width': (100, 1000),
-        'cover_quality': (10, 100),
-    }
-    float_fields = {
-        'upload_interval': (0, 30),
-    }
+    error = SettingsService.validate(data)
+    if error:
+        return error_response(ErrorCode.BAD_REQUEST, error)
 
-    for field, (min_val, max_val) in int_fields.items():
-        if field in data:
-            try:
-                val = int(data[field])
-                if val < min_val or val > max_val:
-                    return error_response(ErrorCode.BAD_REQUEST,
-                                          f'{field} 必须在 {min_val}-{max_val} 之间')
-            except (ValueError, TypeError):
-                return error_response(ErrorCode.BAD_REQUEST, f'{field} 必须为整数')
-
-    for field, (min_val, max_val) in float_fields.items():
-        if field in data:
-            try:
-                val = float(data[field])
-                if val < min_val or val > max_val:
-                    return error_response(ErrorCode.BAD_REQUEST,
-                                          f'{field} 必须在 {min_val}-{max_val} 之间')
-            except (ValueError, TypeError):
-                return error_response(ErrorCode.BAD_REQUEST, f'{field} 必须为数值')
-
-    str_fields = [
-        'site_name', 'auto_cover', 'proxy_enabled', 'proxy_type',
-        'proxy_host', 'proxy_port', 'proxy_user',
-        'cookie_ehentai', 'cookie_exhentai', 'cookie_nhentai',
-        'qb_enabled', 'qb_host', 'qb_port', 'qb_user', 'qb_category',
-        'qb_download_path', 'tag_mapping',
-    ]
-    for field in str_fields:
-        if field in data:
-            Setting.set(field, str(data[field]).strip())
-
-    for field, (min_val, max_val) in int_fields.items():
-        if field in data:
-            Setting.set(field, str(int(data[field])))
-
-    for field, (min_val, max_val) in float_fields.items():
-        if field in data:
-            Setting.set(field, str(float(data[field])))
-
-    if 'proxy_pass' in data and data['proxy_pass'] != '******':
-        Setting.set('proxy_pass', str(data['proxy_pass']).strip())
-    if 'qb_pass' in data and data['qb_pass'] != '******':
-        Setting.set('qb_pass', str(data['qb_pass']).strip())
-
+    SettingsService.save(data)
     return success_response(message='设置已保存')
 
 
 @bp.route('/backup', methods=['GET'])
-@device_required
+@optional_device
 def backup_settings():
     settings = Setting.query.all()
     data = {s.key: s.value for s in settings}
@@ -110,7 +47,7 @@ def backup_settings():
 
 
 @bp.route('/import', methods=['POST'])
-@device_required
+@optional_device
 def import_settings():
     if 'file' not in request.files:
         data = request.get_json(silent=True) or {}
@@ -148,7 +85,7 @@ def import_settings():
 
 
 @bp.route('/test-proxy', methods=['POST'])
-@device_required
+@optional_device
 def test_proxy():
     import time
     data = request.get_json(silent=True) or {}
@@ -229,7 +166,7 @@ def test_proxy():
 
 
 @bp.route('/test-qbittorrent', methods=['POST'])
-@device_required
+@optional_device
 def test_qbittorrent():
     import time
     data = request.get_json(silent=True) or {}
@@ -269,3 +206,24 @@ def test_qbittorrent():
             'success': False,
             'message': f'连接失败: {str(e)}（耗时 {elapsed}ms）'
         })
+
+
+@bp.route('/clear-cache', methods=['POST'])
+@optional_device
+def clear_cache():
+    import os
+    import shutil
+    from config import PAGES_DIR
+    from app.utils.file_utils import get_dir_size, format_size
+
+    cleared = 0
+    if os.path.exists(PAGES_DIR):
+        size = get_dir_size(PAGES_DIR)
+        shutil.rmtree(PAGES_DIR, ignore_errors=True)
+        os.makedirs(PAGES_DIR, exist_ok=True)
+        cleared += size
+
+    return success_response(data={
+        'cleared_bytes': cleared,
+        'message': f'页面缓存已清理，释放 {format_size(cleared)} 空间'
+    })

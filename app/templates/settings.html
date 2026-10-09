@@ -156,6 +156,11 @@
                         <input type="password" class="form-control" id="proxy_pass" name="proxy_pass" value="{{ proxy_pass }}" placeholder="留空则不使用认证">
                     </div>
                     <div class="mb-3">
+                        <label for="proxy_bypass" class="form-label">代理旁路域名（可选）</label>
+                        <input type="text" class="form-control" id="proxy_bypass" name="proxy_bypass" value="{{ proxy_bypass }}" placeholder="如：hath.network">
+                        <div class="form-text">命中后缀的域名不走代理直连（逗号分隔）；留空则全部走代理。H@H 图片节点建议直连</div>
+                    </div>
+                    <div class="mb-3">
                         <button type="button" class="btn btn-outline-light" id="btn_test_proxy" onclick="testProxy()">
                             <i class="bi bi-wifi"></i> 测试链接
                         </button>
@@ -270,7 +275,7 @@ function testProxy() {
     result.textContent = '测试中...';
     result.style.color = 'var(--text-muted)';
 
-    fetch('/api/test-proxy', {
+    fetch('/api/v1/settings/test-proxy', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -283,8 +288,9 @@ function testProxy() {
         })
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
+    .then(function(resp) {
         btn.disabled = false;
+        var data = resp.data || {};
         if (data.success) {
             result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
             result.style.color = 'var(--success)';
@@ -305,7 +311,7 @@ function testQB() {
     result.textContent = '测试中...';
     result.style.color = 'var(--text-muted)';
 
-    fetch('/api/test-qbittorrent', {
+    fetch('/api/v1/settings/test-qbittorrent', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -316,7 +322,8 @@ function testQB() {
         })
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
+    .then(function(resp) {
+        var data = resp.data || {};
         if (data.success) {
             result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
             result.style.color = 'var(--success)';
@@ -332,7 +339,7 @@ function testQB() {
 }
 
 function backupSettings() {
-    window.location.href = '/api/backup-settings';
+    window.location.href = '/api/v1/settings/backup';
 }
 
 function importSettings(input) {
@@ -340,17 +347,17 @@ function importSettings(input) {
     var file = input.files[0];
     var formData = new FormData();
     formData.append('file', file);
-    fetch('/api/import-settings', {
+    fetch('/api/v1/settings/import', {
         method: 'POST',
         body: formData
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.success) {
-            showGlobalToast(data.message, 'success');
+    .then(function(resp) {
+        if (resp.code === 0) {
+            showGlobalToast(resp.message, 'success');
             setTimeout(function() { location.reload(); }, 1000);
         } else {
-            showGlobalToast(data.message, 'error');
+            showGlobalToast(resp.message || '导入失败', 'error');
         }
     })
     .catch(function(err) {
@@ -365,19 +372,20 @@ function clearCache(type) {
     result.textContent = '清理中...';
     result.style.color = 'var(--text-muted)';
 
-    fetch('/api/clear-cache', {
+    fetch('/api/v1/settings/clear-cache', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({type: 'pages'})
     })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.success) {
-            result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
+    .then(function(resp) {
+        if (resp.code === 0) {
+            var msg = (resp.data && resp.data.message) || resp.message || '缓存已清理';
+            result.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + msg;
             result.style.color = 'var(--success)';
             setTimeout(function() { location.reload(); }, 1500);
         } else {
-            result.innerHTML = '<i class="bi bi-x-circle-fill"></i> ' + data.message;
+            result.innerHTML = '<i class="bi bi-x-circle-fill"></i> ' + (resp.message || '清理失败');
             result.style.color = 'var(--accent)';
         }
     })

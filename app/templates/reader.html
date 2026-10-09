@@ -305,6 +305,72 @@
             50% { transform: translateY(3px); }
         }
 
+        #extractingOverlay {
+            position: fixed;
+            inset: 0;
+            background: #0a0a0a;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 20px;
+            text-align: center;
+        }
+        #extractingOverlay.hidden { display: none; }
+        #extractingOverlay .ex-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid rgba(99,149,245,0.2);
+            border-top-color: #6395F5;
+            border-radius: 50%;
+            animation: ex-spin 0.9s linear infinite;
+        }
+        @keyframes ex-spin { to { transform: rotate(360deg); } }
+        #extractingOverlay .ex-title {
+            color: #6395F5;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+        #extractingOverlay .ex-message {
+            color: #888;
+            font-size: 0.85rem;
+        }
+        #extractingOverlay .ex-progress-wrap {
+            width: 240px;
+            max-width: 80%;
+            height: 6px;
+            background: rgba(99,149,245,0.15);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        #extractingOverlay .ex-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #6395F5;
+            transition: width 0.3s ease;
+        }
+        #extractingOverlay .ex-percent {
+            color: #aaa;
+            font-size: 0.8rem;
+        }
+        #extractingOverlay .ex-error {
+            color: #ff6b6b;
+            font-size: 0.85rem;
+            max-width: 90%;
+            word-break: break-word;
+        }
+        #extractingOverlay .ex-retry {
+            background: rgba(99,149,245,0.15);
+            border: 1px solid #6395F5;
+            color: #6395F5;
+            padding: 6px 16px;
+            border-radius: 16px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
         @media (max-width: 767px) {
             #toolbar { padding: 6px 10px; padding-top: max(12px, env(safe-area-inset-top)); }
             #toolbar .btn-icon { font-size: 1.1rem; padding: 3px 6px; }
@@ -319,6 +385,18 @@
 <body class="mode-vertical">
     <div id="progressWrap">
         <div id="progressBar"></div>
+    </div>
+
+    <div id="extractingOverlay" class="{{ '' if not pages else 'hidden' }}">
+        <div class="ex-spinner"></div>
+        <div class="ex-title">正在解压漫画</div>
+        <div class="ex-message" id="exMessage">请稍候，正在准备阅读内容...</div>
+        <div class="ex-progress-wrap">
+            <div class="ex-progress-bar" id="exProgressBar"></div>
+        </div>
+        <div class="ex-percent" id="exPercent">0%</div>
+        <div class="ex-error" id="exError" style="display:none;"></div>
+        <button class="ex-retry" id="exRetry" style="display:none;" onclick="retryExtraction()">重试</button>
     </div>
 
     <div id="toolbar">
@@ -372,7 +450,10 @@
     {% endif %}
 
     <script>
-    const TOTAL = {{ total }};
+    const COMIC_ID = {{ comic.id }};
+    const EXTRACTION_API = "{{ extraction_api }}";
+    const SERVE_PAGE_BASE = "{{ url_for('main.serve_page', comic_id=comic.id, page_filename='__PAGE__') }}";
+    let TOTAL = {{ total }};
     const START_PAGE = {{ start_page }};
     const PRELOAD_RANGE = 3;
 
@@ -383,6 +464,8 @@
     let saveTimer = null;
     let programmaticScroll = false;
     let programmaticTimer = null;
+    let extractionTimer = null;
+    let readerInitialized = false;
 
     const body = document.body;
     const container = document.getElementById('container');
@@ -395,8 +478,118 @@
     const btnPrev = document.getElementById('btnPrev');
     const btnNext = document.getElementById('btnNext');
     const nextHint = document.getElementById('nextHint');
-    const images = document.querySelectorAll('#container .page-img');
-    const slots = document.querySelectorAll('#container .page-slot');
+    let images = document.querySelectorAll('#container .page-img');
+    let slots = document.querySelectorAll('#container .page-slot');
+
+    const extractingOverlay = document.getElementById('extractingOverlay');
+    const exMessage = document.getElementById('exMessage');
+    const exProgressBar = document.getElementById('exProgressBar');
+    const exPercent = document.getElementById('exPercent');
+    const exError = document.getElementById('exError');
+    const exRetry = document.getElementById('exRetry');
+
+    function updateExtractionUI(state) {
+        if (!state) return;
+        const progress = state.progress || 0;
+        const total = state.total || 0;
+        const pct = total > 0 ? Math.min(100, Math.round(progress / total * 100)) : 0;
+        exProgressBar.style.width = pct + '%';
+        exPercent.textContent = pct + '%';
+        if (state.message) exMessage.textContent = state.message;
+        if (state.status === 'error') {
+            exError.style.display = '';
+            exError.textContent = state.message || '解压失败';
+            exRetry.style.display = '';
+            exMessage.textContent = '解压失败';
+        } else {
+            exError.style.display = 'none';
+            exRetry.style.display = 'none';
+        }
+    }
+
+    function hideExtractionOverlay() {
+        if (extractingOverlay) extractingOverlay.classList.add('hidden');
+    }
+
+    function buildPageSlots(pages) {
+        const serveBase = SERVE_PAGE_BASE;
+        const placeholderSvg = (i) => `
+            <svg class="ph-svg" viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="116" height="156" rx="6" fill="#141420" stroke="#6395F5" stroke-width="1" stroke-dasharray="4,4" stroke-opacity="0.4"/>
+                <rect x="18" y="22" width="84" height="12" rx="3" fill="#2a2a3a"/>
+                <rect x="18" y="42" width="64" height="10" rx="3" fill="#2a2a3a"/>
+                <rect x="18" y="60" width="72" height="10" rx="3" fill="#2a2a3a"/>
+                <rect x="60" y="82" width="48" height="52" rx="4" fill="#6395F5" fill-opacity="0.15"/>
+                <text x="60" y="132" text-anchor="middle" font-size="11" fill="#6395F5" fill-opacity="0.5">第${i}页</text>
+            </svg>`;
+
+        const html = pages.map((page, idx) => {
+            const i = idx + 1;
+            const src = serveBase.replace('__PAGE__', encodeURIComponent(page));
+            return `
+            <div class="page-slot" data-page="${i}">
+                <div class="page-placeholder" id="ph-${i}">${placeholderSvg(i)}</div>
+                <img class="page-img" data-page="${i}" data-src="${src}" alt="第${i}页" onload="onImgLoad(this)" onerror="onImgError(this)">
+            </div>`;
+        }).join('');
+        container.innerHTML = html;
+        images = document.querySelectorAll('#container .page-img');
+        slots = document.querySelectorAll('#container .page-slot');
+        TOTAL = pages.length;
+        pageSlider.max = TOTAL;
+    }
+
+    function initReader() {
+        if (readerInitialized) return;
+        readerInitialized = true;
+        if (currentMode !== 'vertical' && currentMode !== 'horizontal') {
+            currentMode = 'vertical';
+        }
+        setMode(currentMode);
+
+        if (START_PAGE > 1) {
+            currentPage = START_PAGE;
+            refreshUI();
+            setTimeout(function() { goToPage(START_PAGE, true); }, 200);
+        } else {
+            currentPage = 1;
+            refreshUI();
+            preloadAround(1);
+        }
+        showUI();
+    }
+
+    function retryExtraction() {
+        exError.style.display = 'none';
+        exRetry.style.display = 'none';
+        exMessage.textContent = '正在重新准备阅读内容...';
+        exProgressBar.style.width = '0%';
+        exPercent.textContent = '0%';
+        pollExtraction();
+    }
+
+    function pollExtraction() {
+        if (extractionTimer) clearTimeout(extractionTimer);
+        fetch(EXTRACTION_API)
+            .then(r => r.json())
+            .then(resp => {
+                const data = resp.data || {};
+                if (data.status === 'ready' && data.pages && data.pages.length > 0) {
+                    buildPageSlots(data.pages);
+                    hideExtractionOverlay();
+                    initReader();
+                    return;
+                }
+                updateExtractionUI(data);
+                if (data.status === 'error') return;
+                extractionTimer = setTimeout(pollExtraction, 1500);
+            })
+            .catch(err => {
+                exError.style.display = '';
+                exError.textContent = '网络错误：' + err;
+                extractionTimer = setTimeout(pollExtraction, 3000);
+            });
+    }
 
     function onImgLoad(img) {
         img.classList.add('loaded');
@@ -642,7 +835,7 @@
             [JSON.stringify({last_page: currentPage, total_pages: TOTAL})],
             {type: 'application/json'}
         );
-        navigator.sendBeacon('/api/comics/{{ comic.id }}/progress', blob);
+        navigator.sendBeacon('/api/v1/comics/{{ comic.id }}/progress', blob);
     }
 
     function scheduleSave() {
@@ -707,28 +900,15 @@
             [JSON.stringify({last_page: currentPage, total_pages: TOTAL})],
             {type: 'application/json'}
         );
-        navigator.sendBeacon('/api/comics/{{ comic.id }}/progress', blob);
+        navigator.sendBeacon('/api/v1/comics/{{ comic.id }}/progress', blob);
     });
 
     (function init() {
-        if (currentMode !== 'vertical' && currentMode !== 'horizontal') {
-            currentMode = 'vertical';
-        }
-        setMode(currentMode);
-
-        if (START_PAGE > 1) {
-            currentPage = START_PAGE;
-            refreshUI();
-            setTimeout(function() {
-                goToPage(START_PAGE, true);
-            }, 200);
+        if (TOTAL > 0) {
+            initReader();
         } else {
-            currentPage = 1;
-            refreshUI();
-            preloadAround(1);
+            pollExtraction();
         }
-
-        showUI();
     })();
     </script>
 </body>

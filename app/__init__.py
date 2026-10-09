@@ -1,11 +1,28 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 import os
-from config import COMICS_DIR, COVERS_DIR, DATA_DIR, NFO_DIR, PAGES_DIR
+from config import COMICS_DIR, COVERS_DIR, DATA_DIR, NFO_DIR, PAGES_DIR, IMAGE_CACHE_DIR
 
 CHUNKS_DIR = os.path.join(DATA_DIR, 'chunks')
 
 db = SQLAlchemy()
+
+
+@event.listens_for(Engine, 'connect')
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """SQLite 连接级调优：WAL 读写不互斥、NORMAL 同步、写锁等待 5s。
+
+    多 gunicorn 进程 + 后台线程并发写同一库文件，默认回滚日志模式
+    极易 database is locked。非 SQLite 连接（如测试内存库）自动跳过。
+    """
+    if type(dbapi_connection).__module__.startswith('sqlite'):
+        cursor = dbapi_connection.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL')
+        cursor.execute('PRAGMA synchronous=NORMAL')
+        cursor.execute('PRAGMA busy_timeout=5000')
+        cursor.close()
 
 
 _scheduler_service = None
@@ -22,6 +39,7 @@ def create_app():
     os.makedirs(NFO_DIR, exist_ok=True)
     os.makedirs(PAGES_DIR, exist_ok=True)
     os.makedirs(CHUNKS_DIR, exist_ok=True)
+    os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
     db.init_app(app)
 
@@ -66,6 +84,9 @@ def create_app():
             pass
         _migrate_db(db)
 
+        # 中断任务恢复已移至 SchedulerService.start()：抓取任务只在持有
+        # 调度锁的 leader 进程运行，仅 leader 恢复——非 leader worker
+        # 重启时误把存活 leader 正在跑的任务标记失败，队列会被假死阻塞
         if _scheduler_service is None:
             from app.services.scheduler_service import SchedulerService
             _scheduler_service = SchedulerService()
@@ -107,6 +128,12 @@ def _migrate_db(db):
         print(f'[数据库] comics表迁移失败: {e}')
         db.session.rollback()
 
+    # 高频查询/排序列补索引（命名与 SQLAlchemy index=True 默认一致）
+    _create_missing_indexes(db, 'comics', [
+        'ix_comics_source_url', 'ix_comics_collection_id', 'ix_comics_rating',
+        'ix_comics_file_size', 'ix_comics_created_at', 'ix_comics_updated_at',
+    ])
+
     try:
         inspector = db.inspect(db.engine)
         if inspector.has_table('download_tasks'):
@@ -123,4 +150,21 @@ def _migrate_db(db):
             db.session.commit()
     except Exception as e:
         print(f'[数据库] download_tasks表迁移失败: {e}')
+        db.session.rollback()
+
+
+def _create_missing_indexes(db, table, index_names):
+    """为旧库补建缺失索引（幂等，IF NOT EXISTS）。"""
+    try:
+        inspector = db.inspect(db.engine)
+        existing = {i['name'] for i in inspector.get_indexes(table)}
+        for name in index_names:
+            if name in existing:
+                continue
+            column = name[len(f'ix_{table}_'):]
+            db.session.execute(db.text(
+                f'CREATE INDEX IF NOT EXISTS {name} ON {table} ({column})'))
+        db.session.commit()
+    except Exception as e:
+        print(f'[数据库] {table} 索引迁移失败: {e}')
         db.session.rollback()

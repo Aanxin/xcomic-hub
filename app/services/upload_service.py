@@ -1,7 +1,6 @@
 import os
 import uuid
 import shutil
-import threading
 
 from datetime import datetime
 from app import db

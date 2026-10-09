@@ -1,13 +1,13 @@
 import os
 import uuid
 import shutil
-import threading
 from datetime import datetime
 
 from flask import Blueprint, request
 from app import db
 from app.models import ChunkedUpload, Setting
 from app.services.upload_service import UploadService, CHUNKS_DIR
+from app.services.task_manager import task_manager, TaskType
 from app.utils.file_utils import safe_filename, allowed_file, get_storage_subdir, resolve_conflict
 from app.api.utils import success_response, error_response, ErrorCode
 from config import COMICS_DIR
@@ -138,12 +138,12 @@ def complete_upload():
     cu.status = 'assembling'
     db.session.commit()
 
-    thread = threading.Thread(
-        target=UploadService.assemble_chunked_upload,
-        args=(upload_id,),
-        daemon=True,
+    task_manager.submit(
+        TaskType.UPLOAD_ASSEMBLY,
+        f'assemble:{upload_id}',
+        UploadService.assemble_chunked_upload,
+        upload_id,
     )
-    thread.start()
 
     return success_response(data=cu.to_dict(), message='文件正在合并处理中')
 

@@ -38,6 +38,16 @@ def _cleanup_tmp_data():
     shutil.rmtree(_TMP_DATA, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def _clear_image_cache():
+    """每个测试前清空源图片代理磁盘缓存，避免用例间同 URL 串扰。"""
+    from config import IMAGE_CACHE_DIR
+
+    shutil.rmtree(IMAGE_CACHE_DIR, ignore_errors=True)
+    yield
+    shutil.rmtree(IMAGE_CACHE_DIR, ignore_errors=True)
+
+
 @pytest.fixture()
 def app():
     a = create_app()
